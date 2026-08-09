@@ -240,12 +240,12 @@ jobs:
 
             // Built from validated values only: paths matched against
             // ENTRY_PATH, scores are integers, the rest is literal.
-            const lines = [marker, '', 'Closing: no entry in this PR clears the gates.', ''];
+            const lines = [marker, '', 'Closing — this PR does not clear the gates:', ''];
             for (const e of notImproving) {
               lines.push(`- \`${e.path}\` — challenger trust score **${e.vendored} third-party bytes / ${e.hazards} hazards**, champion **${e.champion_vendored} / ${e.champion_hazards}**: replacing a champion requires a strictly better score — fewer third-party bytes, or equal bytes and fewer hazards; equal defends (SPEC.md, gate 1)`);
             }
             for (const e of failing) {
-              lines.push(`- \`${e.path}\` — conformance failed; the entry-check log names the failing case and why (SPEC.md, gate 4)`);
+              lines.push(`- \`${e.path}\` — conformance or entry validation failed; the entry-check log names the failing case or the manifest/file violation (SPEC.md, gate 4)`);
             }
             lines.push(
               '',

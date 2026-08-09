@@ -82,8 +82,8 @@ body:
       description: >-
         Cases are argv-in / stdout-out, compared byte-exact, run with
         `--network none` (SPEC.md → Conformance). No servers, no
-        long-running processes, no network — that needs a new case model
-        first (TODO.md notes this explicitly for server-style tasks).
+        long-running processes, no network — that would need a new case
+        model first.
       options:
         - "Not sure — haven't checked"
         - "Yes — argv/files in, stdout out, no network, no server"

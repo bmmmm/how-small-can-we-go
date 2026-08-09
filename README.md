@@ -27,7 +27,7 @@ less trust than it does.
 3. Open a PR that replaces the niche directory. CI measures; it never
    believes. Beat the score or the PR closes.
 
-An entry is deliberately small ceremony: one 6-line `entry.json`
+An entry is deliberately small ceremony: one tiny `entry.json`
 manifest plus your source — the whole format is in [SPEC.md](SPEC.md).
 
 An empty niche (a topic with no entry yet)? The first passing entry
@@ -52,10 +52,11 @@ line.
 What deliberately does **not** count: code length, name length,
 comments. Readable, well-documented code costs nothing extra —
 comments are stripped before the hazard scan wherever the language is
-provably lexable, so documentation is never penalized. This is a game
-about demanded trust, not a security certification: a zero-score entry
-can still hold a bug — that is what the ever-sharpening test suites
-are for.
+provably lexable (bash isn't; it scans raw, comments included). This
+is a game about demanded trust, not a security certification: a
+zero-score entry can still hold a bug — that is what the
+ever-sharpening test suites are for, and a breaking test case is
+exactly how a buggy champion gets dethroned.
 
 ## What keeps the slop out
 
@@ -88,7 +89,8 @@ cd tool && go build -o ../arena . && cd ..
 ```
 
 No docker? Push your branch — the entry-check workflow runs the real
-sandboxed measurement on every branch push and on
+sandboxed measurement on branch pushes touching `entries/`, `tasks/`,
+or `languages.json`, and on
 `gh workflow run entry-check --ref <branch>`, so CI does the containers
 for you. Local `--no-sandbox` plus Go is all you need.
 

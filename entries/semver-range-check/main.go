@@ -8,18 +8,20 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
-type version struct{ major, minor, patch int }
+type version struct{ major, minor, patch uint64 }
 
 // compare returns -1, 0, or 1: major first, then minor, then patch.
+// Direct comparisons, not subtraction — subtraction wraps.
 func compare(a, b version) int {
-	for _, d := range [3]int{a.major - b.major, a.minor - b.minor, a.patch - b.patch} {
-		if d < 0 {
+	for _, p := range [3][2]uint64{{a.major, b.major}, {a.minor, b.minor}, {a.patch, b.patch}} {
+		if p[0] < p[1] {
 			return -1
 		}
-		if d > 0 {
+		if p[0] > p[1] {
 			return 1
 		}
 	}
@@ -31,17 +33,18 @@ func parseVersion(s string) (version, error) {
 	if len(parts) != 3 {
 		return version{}, fmt.Errorf("version %q: want MAJOR.MINOR.PATCH", s)
 	}
-	var n [3]int
+	var n [3]uint64
 	for i, p := range parts {
 		if p == "" || (len(p) > 1 && p[0] == '0') {
 			return version{}, fmt.Errorf("version %q: component %q is empty or has a leading zero", s, p)
 		}
-		for _, c := range p {
-			if c < '0' || c > '9' {
-				return version{}, fmt.Errorf("version %q: component %q is not a base-10 integer", s, p)
-			}
-			n[i] = n[i]*10 + int(c-'0')
+		// ParseUint accepts digits only (no sign) and rejects anything
+		// beyond 63 bits — the spec's component bound.
+		v, err := strconv.ParseUint(p, 10, 63)
+		if err != nil {
+			return version{}, fmt.Errorf("version %q: component %q is not a base-10 integer within 63 bits", s, p)
 		}
+		n[i] = v
 	}
 	return version{n[0], n[1], n[2]}, nil
 }

@@ -121,8 +121,10 @@ func (l *Language) compile() error {
 }
 
 // sourceFile reports whether rel has one of the language's source
-// extensions. Only source files are hazard-scanned; everything else is
-// data to its runtime.
+// extensions. Source files get the comment strip; every other file is
+// scanned raw — an entry can execute a file of any name (`python3
+// prog`, `#include "payload.inc"`), so no shipped byte escapes the
+// scan.
 func (l Language) sourceFile(rel string) bool {
 	for _, ext := range l.Extensions {
 		if strings.HasSuffix(rel, ext) {
@@ -159,11 +161,14 @@ func (s Score) Better(c Score) bool {
 	return s.HazardCount < c.HazardCount
 }
 
-// ScoreDir scores every file under dir except the entry.json manifest.
-// Vendored bytes are everything under a vendor/ path segment — data
-// files included, because a vendored blob is trusted freight either
-// way. Hazards are counted in every source file, vendored or not: code
-// you ship is code that runs.
+// ScoreDir scores an entry directory. Vendored bytes are everything
+// under a vendor/ path segment — data files included, because a
+// vendored blob is trusted freight either way. Hazards are counted in
+// EVERY shipped file, vendored or not, data or not: an entry can
+// execute a file of any name, so every byte is scanned. Source files
+// (by extension) get the comment strip first; everything else scans
+// raw. The manifest's build and run commands are scanned too — they
+// can carry code (`python3 -c …`).
 func ScoreDir(dir string, lang Language) (Score, error) {
 	var sc Score
 	err := walkEntryFiles(dir, func(path, rel string, b []byte) error {
@@ -171,11 +176,15 @@ func ScoreDir(dir string, lang Language) (Score, error) {
 		if isVendored(rel) {
 			sc.VendoredBytes += len(b)
 		}
-		if !lang.sourceFile(rel) {
-			return nil
+		if lang.CollapseSplices {
+			// Line numbers below refer to the spliced form; the splice
+			// itself only ever joins, so a hit is never lost.
+			b = collapseSplices(b)
 		}
 		text := b
-		if lang.Strip == nil {
+		if !lang.sourceFile(rel) {
+			sc.Notes = append(sc.Notes, rel+": not a source extension — scanned raw, comments count")
+		} else if lang.Strip == nil {
 			sc.Notes = append(sc.Notes, rel+": no strip config for this language — scanned raw, comments count")
 		} else if guard := matchRe(b, lang.Strip.fileRe); guard != "" {
 			sc.Notes = append(sc.Notes, fmt.Sprintf("%s: matches lex guard %q — scanned raw, comments count", rel, guard))
@@ -184,17 +193,7 @@ func ScoreDir(dir string, lang Language) (Score, error) {
 		} else {
 			sc.Notes = append(sc.Notes, fmt.Sprintf("%s: %s — scanned raw, comments count", rel, why))
 		}
-		for _, h := range lang.Hazards {
-			for _, loc := range h.re.FindAllIndex(text, -1) {
-				sc.HazardCount++
-				sc.Hazards = append(sc.Hazards, HazardHit{
-					File:    rel,
-					Line:    1 + bytes.Count(text[:loc[0]], []byte("\n")),
-					Pattern: h.Pattern,
-					Why:     h.Why,
-				})
-			}
-		}
+		sc.scan(rel, text, lang)
 		return nil
 	})
 	if err != nil {
@@ -203,14 +202,52 @@ func ScoreDir(dir string, lang Language) (Score, error) {
 	if sc.Files == 0 {
 		return Score{}, fmt.Errorf("%s contains no files to score", dir)
 	}
+	// The manifest is excluded from the byte count but not from the
+	// hazard scan: build/run are executed, so they are code.
+	if man, err := LoadManifest(dir); err == nil {
+		sc.scan("entry.json(build)", []byte(man.Build), lang)
+		sc.scan("entry.json(run)", []byte(man.Run), lang)
+	}
 	return sc, nil
 }
 
-// isVendored reports whether rel (a slash path) sits under a vendor/
+// scan counts every hazard match in text.
+func (sc *Score) scan(rel string, text []byte, lang Language) {
+	for _, h := range lang.Hazards {
+		for _, loc := range h.re.FindAllIndex(text, -1) {
+			sc.HazardCount++
+			sc.Hazards = append(sc.Hazards, HazardHit{
+				File:    rel,
+				Line:    1 + bytes.Count(text[:loc[0]], []byte("\n")),
+				Pattern: h.Pattern,
+				Why:     h.Why,
+			})
+		}
+	}
+}
+
+// collapseSplices joins backslash-newline (and backslash-CRLF) line
+// continuations, mirroring what the language's own reader does before
+// tokenizing.
+func collapseSplices(b []byte) []byte {
+	b = bytes.ReplaceAll(b, []byte("\\\r\n"), nil)
+	return bytes.ReplaceAll(b, []byte("\\\n"), nil)
+}
+
+// vendorDirs are the directory names that count as third-party freight,
+// compared case-insensitively. More than just "vendor": renaming the
+// directory must not be a discount.
+var vendorDirs = map[string]bool{
+	"vendor": true, "vendored": true, "third_party": true,
+	"thirdparty": true, "third-party": true, "deps": true,
+	"extern": true, "external": true,
+}
+
+// isVendored reports whether rel (a slash path) sits under a vendored
 // directory at any depth.
 func isVendored(rel string) bool {
 	for _, seg := range strings.Split(rel, "/") {
-		if seg == "vendor" {
+		if vendorDirs[strings.ToLower(seg)] {
 			return true
 		}
 	}
@@ -225,6 +262,22 @@ func isVendored(rel string) bool {
 func stripComments(b []byte, st *Strip) (out []byte, why string, ok bool) {
 	out = bytes.Clone(b)
 	trig := triggeredLines(b, st)
+	// A guarded line is skipped without tracking strings — a multiline
+	// string opened there would desync the scanner for the rest of the
+	// file, and a "comment" blanked inside it could hide a hazard the
+	// language actually runs. No proof, no strip.
+	if trig != nil {
+		for i, l := range bytes.Split(b, []byte("\n")) {
+			if !trig[i] {
+				continue
+			}
+			for _, s := range st.Strings {
+				if s.Multiline && bytes.Contains(l, []byte(s.Open)) {
+					return nil, "multiline string opener on a guarded line", false
+				}
+			}
+		}
+	}
 	line := 0
 	pos := 0
 	for pos < len(b) {

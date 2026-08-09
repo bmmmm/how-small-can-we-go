@@ -176,13 +176,124 @@ func TestScoreGuardLineScansRaw(t *testing.T) {
 	}
 }
 
-// Data files are not source: no hazard scan, but vendored data still
-// weighs.
-func TestScoreDataFilesNotScanned(t *testing.T) {
+// Files without a source extension are scanned raw: an entry can
+// execute a file of any name (`python3 prog`, `#include "x.inc"`), so
+// no shipped byte may escape the scan.
+func TestScoreDataFilesScanRaw(t *testing.T) {
 	lang := testLang(t)
-	sc := scoreOne(t, lang, "table.txt", "unsafe.Pointer all over\n")
+	sc := scoreOne(t, lang, "payload.inc", "unsafe.Pointer all over\n")
+	if sc.HazardCount != 1 {
+		t.Errorf("non-source file escaped the hazard scan: %+v", sc)
+	}
+	if len(sc.Notes) == 0 || !strings.Contains(sc.Notes[0], "not a source extension") {
+		t.Errorf("raw data scan not noted: %v", sc.Notes)
+	}
+}
+
+// The manifest's build and run commands execute, so they are scanned —
+// `python3 -c 'exec(...)'` must not be a free code channel.
+func TestScoreManifestCommandsScanned(t *testing.T) {
+	lang := Language{Image: "img", Extensions: []string{".py"},
+		Hazards: []Hazard{{Pattern: `\bexec\b`, Why: "evaluates data as code"}}}
+	if err := lang.compile(); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "entry.json"),
+		`{"task": "t", "language": "python", "authors": ["a"], "run": "python3 -c exec(open('x.txt').read())"}`)
+	writeFile(t, filepath.Join(dir, "x.txt"), "print('hi')\n")
+	sc, err := ScoreDir(dir, lang)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, h := range sc.Hazards {
+		if h.File == "entry.json(run)" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("manifest run command escaped the hazard scan: %+v", sc.Hazards)
+	}
+}
+
+// Backslash-newline splicing must not split a hazard name apart —
+// `sys\<nl>tem(` compiles to system().
+func TestScoreCollapseSplicesBeforeScan(t *testing.T) {
+	lang := Language{Image: "img", Extensions: []string{".c"}, CollapseSplices: true,
+		Hazards: []Hazard{{Pattern: `\bsystem\b`, Why: "runs a shell command"}}}
+	if err := lang.compile(); err != nil {
+		t.Fatal(err)
+	}
+	sc := scoreOne(t, lang, "main.c", "int main(void){ sys\\\ntem(\"ls\"); }\n")
+	if sc.HazardCount != 1 {
+		t.Errorf("line-spliced hazard not counted: %+v", sc)
+	}
+}
+
+// Renaming vendor/ must not be a discount: the alias list and the
+// case-insensitive match both count.
+func TestScoreVendorAliasesCount(t *testing.T) {
+	lang := testLang(t)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "main.go"), "package main\n")
+	writeFile(t, filepath.Join(dir, "third_party/a.txt"), "1234")
+	writeFile(t, filepath.Join(dir, "VENDOR/b.txt"), "56")
+	sc, err := ScoreDir(dir, lang)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sc.VendoredBytes != 6 {
+		t.Errorf("vendored bytes = %d, want 6 (third_party + VENDOR)", sc.VendoredBytes)
+	}
+}
+
+// A multiline string opened on a guarded line would desync the scanner
+// for the rest of the file — such files scan raw, never stripped.
+func TestScoreGuardedLineMultilineOpenerScansRaw(t *testing.T) {
+	lang := Language{
+		Image:      "img",
+		Extensions: []string{".py"},
+		Strip: &Strip{
+			LineComments: []string{"#"},
+			Strings: []StringSyntax{
+				{Open: `"""`, Close: `"""`, Escape: `\`, Multiline: true},
+				{Open: `"`, Close: `"`, Escape: `\`},
+			},
+			GuardLine: []string{`(^|[^A-Za-z0-9_])[fF]["']`},
+		},
+		Hazards: []Hazard{{Pattern: `\bsubprocess\b`, Why: "spawns processes"}},
+	}
+	if err := lang.compile(); err != nil {
+		t.Fatal(err)
+	}
+	sc := scoreOne(t, lang, "main.py", "a = f\"\" + \"\"\"\n# subprocess mention\n\"\"\" + f\"\"\n")
+	if len(sc.Notes) == 0 {
+		t.Fatal("guarded-line multiline opener not flagged for raw scan")
+	}
+	if sc.HazardCount != 1 {
+		t.Errorf("raw scan must count what the desync would have hidden: %+v", sc)
+	}
+}
+
+// entry.json itself is not scored content: a hazard word inside its
+// metadata fields (authors, task) must not count — only build and run.
+func TestScoreManifestMetadataNotScanned(t *testing.T) {
+	lang := Language{Image: "img", Extensions: []string{".py"},
+		Hazards: []Hazard{{Pattern: `\beval\b`, Why: "evaluates data as code"}}}
+	if err := lang.compile(); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "entry.json"),
+		`{"task": "t", "language": "python", "authors": ["eval-fan"], "run": "python3 main.py"}`)
+	writeFile(t, filepath.Join(dir, "main.py"), "print(1)\n")
+	sc, err := ScoreDir(dir, lang)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if sc.HazardCount != 0 {
-		t.Errorf("data file was hazard-scanned: %+v", sc)
+		t.Errorf("manifest metadata was scanned: %+v", sc.Hazards)
 	}
 }
 

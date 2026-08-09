@@ -45,9 +45,10 @@ README.md; binding rules live in SPEC.md.
 
    `arena score` prints `<third-party bytes> <hazards>` and names
    every hazard hit (file, line, why) and every raw-scanned file on
-   stderr. A hazard hit inside a bash comment or a string literal
-   still counts — the scanner is deliberately fail-suspicious; phrase
-   around it or accept the point.
+   stderr. A hazard hit inside a bash comment, a string literal, a
+   file without the language's source extension, or the manifest's
+   `build`/`run` commands still counts — the scanner is deliberately
+   fail-suspicious; phrase around it or accept the point.
 
    With docker available, drop `--no-sandbox` to reproduce CI exactly
    (no network, pinned image). If your entry only works with
@@ -73,13 +74,18 @@ README.md; binding rules live in SPEC.md.
 - Any failing test case.
 - Trust score not strictly better than a passing champion of the
   niche (fewer third-party bytes, or equal bytes and fewer hazards —
-  equal defends).
+  equal defends). Exception: a buggy champion is dethroned by first
+  submitting the test case that breaks it — a failing champion
+  defends nothing.
 - Non-UTF-8 bytes, NUL bytes, or symlinks in the entry.
 - Build or run needing the network.
 - A language missing from `languages.json` (propose it in a separate
   PR first).
 - `task` in `entry.json` not matching the niche directory name.
-- Touching files outside your niche directory in an entry PR.
+
+Not auto-closed but parked for a maintainer instead — still don't do
+it: touching files outside `entries/` in an entry PR, or deleting an
+entry.
 
 ## Test-case submissions
 

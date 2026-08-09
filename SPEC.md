@@ -64,7 +64,9 @@ The score prices trust, not size. Code length, name length, comment
 volume — none of it measures anything. What measures:
 
 1. **Third-party bytes.** The byte total of everything under a
-   `vendor/` path segment, data and license files included: a vendored
+   vendored path segment — `vendor`, `vendored`, `third_party`,
+   `thirdparty`, `third-party`, `deps`, `extern`, `external`, matched
+   case-insensitively — data and license files included: a vendored
    blob is trusted freight either way. Ideal: zero — the task solved
    from the language and its standard library alone. The pinned
    container image (runtime + stdlib) is the trusted base and free;
@@ -73,31 +75,43 @@ volume — none of it measures anything. What measures:
    list of hazard patterns with a documented `why` — constructs that
    demand extra reviewer trust: process execution, dynamic code
    evaluation, reflection, FFI, unsafe memory, unbounded writes. Every
-   occurrence in every source file counts, vendored source included:
-   code you ship is code that runs. `arena check` and `arena score`
-   name every hit with file, line, and reason.
+   occurrence in **every shipped file** counts, vendored or not — an
+   entry can execute a file of any name, so files without the
+   language's source extension are scanned too (raw). The manifest's
+   `build` and `run` commands are scanned as well: they execute, so
+   they are code. For languages whose reader joins `\`-newline
+   continuations (c, python, bash) the scan joins them first — a
+   spliced spelling is the same construct. `arena check` and
+   `arena score` name every hit with file, line, and reason.
 
 A challenger beats a champion when its score is **strictly better**:
 fewer third-party bytes, or equally many and fewer hazards. Equal is
 not better — the champion defends ties; first-mover advantage is
-deliberate, churn without improvement is noise.
+deliberate, churn without improvement is noise. A **buggy** champion
+is dethroned differently: ship the breaking test case first (see
+*Test-case contributions*) — a failing champion defends nothing, so
+the niche opens to any passing entry, score regardless.
 
-**Comments are never hazards.** Before the hazard scan, comments are
-stripped wherever the language's declared syntax (`languages.json`)
-lets the scanner prove the strip safe. Anything doubtful is scanned
-raw, comments included: files matching a lex guard (Rust raw strings,
-C trigraphs), single lines matching a line guard (Python f-strings),
-constructs the scanner cannot lex, and every file of a language
-without a strip config (bash — heredocs defeat safe comment
-detection). A doubtful corner can therefore only ever overcount
-hazards, never hide one. The tools name every raw-scanned file and
-why. String literals are tracked but not stripped: a hazard pattern
-inside a string may count — fail-suspicious is the accepted trade.
+**Documentation is not penalized — where that is provable.** Before
+the hazard scan, comments are stripped wherever the language's
+declared syntax (`languages.json`) lets the scanner prove the strip
+safe. Anything doubtful is scanned raw, comments included: files
+matching a lex guard (Rust raw strings, C trigraphs), single lines
+matching a line guard (Python f-strings), constructs the scanner
+cannot lex, and every file of a language without a strip config
+(bash — heredocs defeat safe comment detection). A doubtful corner
+can therefore only ever overcount hazards, never hide one. The tools
+name every raw-scanned file and why. Two deliberate exceptions:
+semantic comments (Go's `//go:` directives) are instructions to the
+toolchain, so they survive the strip and can score — that is how
+`//go:linkname` costs. And string literals are tracked but not
+stripped: a hazard pattern inside a string may count.
+Fail-suspicious is the accepted trade everywhere.
 
 - Every file in the entry directory except `entry.json` is subject to
-  scoring. `entry.json` must stay a manifest: exactly the five known
-  fields, at most 4096 bytes — and it is not copied into the run
-  directory at all.
+  scoring. `entry.json` must stay a manifest: only the five known
+  fields (`build` optional), at most 4096 bytes — and it is not
+  copied into the run directory at all.
 - Files must be valid UTF-8 without NUL bytes. Symlinks are forbidden.
   Violations fail the check — an entry is reviewable in full or it
   does not ship.

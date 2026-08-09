@@ -22,7 +22,8 @@ prog <range> <version>
 ## Versions
 
 `MAJOR.MINOR.PATCH` — exactly three dot-separated components, each a
-base-10 integer without leading zeros (`0` itself is fine). Nothing
+base-10 integer without leading zeros (`0` itself is fine) that fits
+in 63 bits (0 ≤ n < 2^63); anything larger is invalid input. Nothing
 else: no `v` prefix, no pre-release (`-alpha`), no build metadata
 (`+build`). Those are out of scope for this task and must be rejected
 as invalid.
@@ -40,9 +41,10 @@ op         := "=" | "<" | "<=" | ">" | ">=" | "^" | "~"
 
 - A clause is the AND of its comparators; the range is the OR of its
   clauses. AND binds tighter than OR.
-- Whitespace (spaces/tabs) around `||` and between comparators is
-  allowed and insignificant. An empty clause (`"^1.0.0 ||"`) is
-  invalid.
+- Whitespace (ASCII space and tab) around `||` and between comparators
+  is allowed and insignificant. An empty clause (`"^1.0.0 ||"`) is
+  invalid. No whitespace between an operator and its version —
+  `>= 1.2.0` is invalid.
 - No operator means `=` (exact match).
 - `~X.Y.Z` allows patch-level changes: `>=X.Y.Z <X.(Y+1).0`.
 - `^X.Y.Z` allows changes up to the next breaking version:

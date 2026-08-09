@@ -128,6 +128,25 @@ func TestSandboxDockerDaemonFailureIsInfra(t *testing.T) {
 	}
 }
 
+// A daemon that is down exits 1 from the docker CLI — code alone cannot
+// distinguish it from a failing program, so the stderr signature must.
+// Without this, a docker outage would auto-close healthy PRs as
+// conformance failures (and its exit 1 would satisfy exit:nonzero
+// cases).
+func TestSandboxDockerDaemonDownIsInfra(t *testing.T) {
+	fakeDocker(t, "echo 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?' >&2\nexit 1\n")
+	root := testRepo(t)
+	res := CheckEntry(filepath.Join(root, "entries/echo-file"), Options{RepoRoot: root, Sandbox: true})
+	if !res.Infra {
+		t.Fatalf("daemon-down exit 1 not classified as infra: %+v", res)
+	}
+	for _, c := range res.Cases {
+		if c.Pass {
+			t.Errorf("case %s passed on a daemon-down failure", c.Name)
+		}
+	}
+}
+
 // Exit 1 in sandbox mode is the program's own exit code, not docker's:
 // it must stay a regular verdict, or every failing entry would read as
 // an infra problem.

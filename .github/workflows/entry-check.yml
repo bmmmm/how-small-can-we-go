@@ -108,17 +108,31 @@ jobs:
               fail=1
               continue
             else
-              summary "- ❌ conformance failed — the job log shows the failing case and why"
+              summary "- ❌ conformance or entry validation failed — the job log names the failing case or the manifest/file violation"
               record "$d" conformance-fail
               fail=1
               continue
             fi
-            read -r new_v new_h <<< "$("$arena" score "$d")"
+            # A score that failed or printed nothing is no verdict —
+            # without this guard an empty read would fall through to
+            # the not-improving branch and auto-close on a measurement
+            # that never happened.
+            if ! score_out=$("$arena" score "$d") || ! read -r new_v new_h <<< "$score_out" || [ -z "$new_h" ]; then
+              summary "- ⚠️ scoring failed — no verdict; see the job log"
+              record "$d" infra-error
+              fail=1
+              continue
+            fi
             if [ -d "$RUNNER_TEMP/base/$d" ]; then
               # Scored from the PR checkout on purpose: both sides are
               # scored under the PR's languages.json, so a PR touching
               # the hazard config cannot compare apples to oranges.
-              read -r old_v old_h <<< "$("$arena" score "$RUNNER_TEMP/base/$d")"
+              if ! score_out=$("$arena" score "$RUNNER_TEMP/base/$d") || ! read -r old_v old_h <<< "$score_out" || [ -z "$old_h" ]; then
+                summary "- ⚠️ scoring the champion failed — no verdict; see the job log"
+                record "$d" infra-error
+                fail=1
+                continue
+              fi
               if better "$new_v" "$new_h" "$old_v" "$old_h"; then
                 summary "- ✅ trust score: $new_v bytes / $new_h hazards beats $old_v / $old_h — champion beaten"
                 record "$d" beats-champion "$new_v" "$new_h" "$old_v" "$old_h"
@@ -154,17 +168,21 @@ jobs:
             BASE_SHA=$(git merge-base origin/main HEAD)
           fi
           arena="$RUNNER_TEMP/arena"
-          mapfile -t tasks < <(git diff --name-only "$BASE_SHA"...HEAD -- tasks/ | cut -d/ -f1-2 | sort -u)
+          mapfile -t tasks < <(git diff --no-renames --name-only "$BASE_SHA"...HEAD -- tasks/ | cut -d/ -f1-2 | sort -u)
           [ "${#tasks[@]}" -eq 0 ] && exit 0
           {
             echo "## Case impact"
-            echo "A new case is accepted when it breaks a current entry or closes a documented spec gap (SPEC.md)."
+            echo "A new case is accepted when it breaks the current champion or closes a documented spec gap (SPEC.md)."
           } >> "$GITHUB_STEP_SUMMARY"
           for t in "${tasks[@]}"; do
             e="entries/$(basename "$t")"
             [ -d "$e" ] || continue
-            if "$arena" check "$e"; then
+            rc=0
+            "$arena" check "$e" || rc=$?
+            if [ "$rc" -eq 0 ]; then
               echo "- \`$e\`: still passing" >> "$GITHUB_STEP_SUMMARY"
+            elif [ "$rc" -eq 3 ]; then
+              echo "- \`$e\`: ⚠️ infra failure — no verdict on this case's impact" >> "$GITHUB_STEP_SUMMARY"
             else
               echo "- \`$e\`: **breaks** — this case discriminates" >> "$GITHUB_STEP_SUMMARY"
             fi
@@ -196,8 +214,10 @@ jobs:
             touched_other=true
           fi
           if [ -f "$RUNNER_TEMP/check-complete" ]; then
-            # infra outranks the failure classes: one entry without a
-            # verdict poisons the whole run for auto-closing purposes.
+            # Precedence: removed first (always a maintainer call),
+            # then infra — one entry without a verdict poisons the
+            # whole run for auto-closing purposes — then the failure
+            # classes.
             class=$(awk -F'\t' '
               $2 == "removed"          { removed = 1 }
               $2 == "infra-error"      { infra = 1 }

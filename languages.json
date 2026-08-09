@@ -2,14 +2,16 @@
   "bash": {
     "image": "bash:5.2",
     "extensions": [".sh", ".bash"],
+    "collapseSplices": true,
     "hazards": [
       { "pattern": "\\beval\\b", "why": "evaluates data as code" },
       { "pattern": "\\$\\{!", "why": "indirect expansion reads a variable chosen at runtime" }
     ]
   },
   "c": {
-    "image": "gcc:14",
+    "image": "gcc:14.2",
     "extensions": [".c", ".h"],
+    "collapseSplices": true,
     "strip": {
       "lineComments": ["//"],
       "blockComments": [["/*", "*/"]],
@@ -20,16 +22,16 @@
       "guardFile": ["\\?\\?/"]
     },
     "hazards": [
-      { "pattern": "\\bsystem\\s*\\(", "why": "runs a shell command" },
-      { "pattern": "\\bpopen\\s*\\(", "why": "runs a shell command with a pipe" },
-      { "pattern": "\\bexec[lv][pe]*\\s*\\(", "why": "replaces the process image" },
-      { "pattern": "\\bfork\\s*\\(", "why": "spawns processes" },
+      { "pattern": "\\bsystem\\b", "why": "runs a shell command" },
+      { "pattern": "\\bpopen\\b", "why": "runs a shell command with a pipe" },
+      { "pattern": "\\bexec[lv][pe]*\\b", "why": "replaces the process image" },
+      { "pattern": "\\bfork\\b", "why": "spawns processes" },
       { "pattern": "\\bdlopen\\b", "why": "loads native code at runtime" },
-      { "pattern": "\\bgets\\s*\\(", "why": "unbounded read into a buffer — removed from C11 for a reason" },
-      { "pattern": "\\bstrcpy\\s*\\(", "why": "unbounded write — classic overflow primitive" },
-      { "pattern": "\\bstrcat\\s*\\(", "why": "unbounded write — classic overflow primitive" },
-      { "pattern": "\\bsprintf\\s*\\(", "why": "unbounded write — classic overflow primitive" },
-      { "pattern": "\\bvsprintf\\s*\\(", "why": "unbounded write — classic overflow primitive" },
+      { "pattern": "\\bgets\\b", "why": "unbounded read into a buffer — removed from C11 for a reason" },
+      { "pattern": "\\bstrcpy\\b", "why": "unbounded write — classic overflow primitive" },
+      { "pattern": "\\bstrcat\\b", "why": "unbounded write — classic overflow primitive" },
+      { "pattern": "\\bsprintf\\b", "why": "unbounded write — classic overflow primitive" },
+      { "pattern": "\\bvsprintf\\b", "why": "unbounded write — classic overflow primitive" },
       { "pattern": "\\basm\\b|__asm__", "why": "inline assembly bypasses the compiler entirely" },
       { "pattern": "##", "why": "token pasting assembles identifiers the reader never sees" }
     ]
@@ -45,22 +47,23 @@
         { "open": "`", "close": "`", "multiline": true },
         { "open": "'", "close": "'", "escape": "\\" }
       ],
-      "keepComments": ["^//go:", "^//line ", "^//export "]
+      "keepComments": ["^//go:"]
     },
     "hazards": [
-      { "pattern": "\\bunsafe\\.", "why": "defeats the memory model; every use is a manual proof obligation" },
-      { "pattern": "\\breflect\\.", "why": "reads and writes types at runtime — control flow the reader cannot follow statically" },
+      { "pattern": "\"unsafe\"", "why": "the unsafe import defeats the memory model; matched as import path so aliasing cannot hide it" },
+      { "pattern": "\"reflect\"", "why": "reflection reads and writes types at runtime; matched as import path so aliasing cannot hide it" },
+      { "pattern": "\"plugin\"", "why": "loads native code at runtime; matched as import path so aliasing cannot hide it" },
       { "pattern": "os/exec", "why": "spawns processes" },
       { "pattern": "\\bStartProcess\\b", "why": "spawns processes below os/exec" },
       { "pattern": "\\bsyscall\\b", "why": "raw kernel interface bypasses the runtime's safety layer" },
       { "pattern": "import \"C\"", "why": "cgo crosses into unmanaged native code" },
-      { "pattern": "//go:linkname", "why": "links to private symbols of other packages — invisible coupling" },
-      { "pattern": "\\bplugin\\.Open\\b", "why": "loads native code at runtime" }
+      { "pattern": "//go:linkname", "why": "links to private symbols of other packages — invisible coupling" }
     ]
   },
   "python": {
     "image": "python:3.13-alpine",
     "extensions": [".py"],
+    "collapseSplices": true,
     "strip": {
       "lineComments": ["#"],
       "strings": [
@@ -69,19 +72,19 @@
         { "open": "\"", "close": "\"", "escape": "\\" },
         { "open": "'", "close": "'", "escape": "\\" }
       ],
-      "guardLine": ["[fF][rRbB]?[\"']", "[rRbB][fF][\"']"],
-      "keepComments": ["^#!", "coding[:=]"]
+      "guardLine": ["(^|[^A-Za-z0-9_])[fF][rRbB]?[\"']", "(^|[^A-Za-z0-9_])[rRbB][fF][\"']"]
     },
     "hazards": [
-      { "pattern": "\\beval\\s*\\(", "why": "evaluates data as code" },
-      { "pattern": "\\bexec\\s*\\(", "why": "evaluates data as code" },
-      { "pattern": "\\bcompile\\s*\\(", "why": "compiles data to code objects" },
+      { "pattern": "(^|[^.\\w])eval\\b", "why": "evaluates data as code (aliasing it is still the same door)" },
+      { "pattern": "(^|[^.\\w])exec\\b", "why": "evaluates data as code (aliasing it is still the same door)" },
+      { "pattern": "(^|[^.\\w])compile\\b", "why": "compiles data to code objects (re.compile is fine — this matches the builtin)" },
       { "pattern": "__import__|\\bimportlib\\b", "why": "imports chosen at runtime — the dependency graph stops being static" },
-      { "pattern": "\\b(get|set|del)attr\\s*\\(", "why": "attribute access by computed name — reflection" },
-      { "pattern": "\\bglobals\\s*\\(|\\blocals\\s*\\(|\\bvars\\s*\\(", "why": "namespace reflection" },
+      { "pattern": "\\b(get|set|del)attr\\b", "why": "attribute access by computed name — reflection" },
+      { "pattern": "\\bglobals\\b|\\blocals\\b", "why": "namespace reflection" },
       { "pattern": "\\bctypes\\b", "why": "FFI into unmanaged native code" },
       { "pattern": "\\bpickle\\b|\\bmarshal\\b", "why": "deserialization that executes arbitrary code" },
-      { "pattern": "\\bsubprocess\\b|os\\.system|os\\.popen|os\\.exec|os\\.spawn", "why": "spawns processes" }
+      { "pattern": "\\bsubprocess\\b|os\\.system|os\\.popen|os\\.exec|os\\.spawn", "why": "spawns processes" },
+      { "pattern": "[^\\x00-\\x7f]+", "why": "PEP 3131 normalizes identifiers to NFKC, so a homoglyph spelling of a builtin executes as the builtin — non-ASCII runs are scanned suspicious" }
     ]
   },
   "rust": {
@@ -97,7 +100,7 @@
     },
     "hazards": [
       { "pattern": "\\bunsafe\\b", "why": "leaves the borrow checker's guarantees; every block is a manual proof obligation" },
-      { "pattern": "std::process", "why": "spawns processes" },
+      { "pattern": "\\bprocess\\s*::", "why": "spawns processes (matched on the module path so `use std as s` cannot hide it)" },
       { "pattern": "extern\\s*\"C\"", "why": "FFI into unmanaged native code" }
     ]
   }

@@ -17,7 +17,7 @@ func cmdCheck(args []string) error {
 	asJSON := fs.Bool("json", false, "print results as JSON")
 	_ = fs.Parse(flagsFirst(args))
 	if fs.NArg() == 0 {
-		return fmt.Errorf("check: no entry directory given (e.g. arena check entries/sha256-file/go)")
+		return fmt.Errorf("%w: check: no entry directory given (e.g. arena check entries/semver-range-check)", errUsage)
 	}
 	root, err := repoRoot()
 	if err != nil {

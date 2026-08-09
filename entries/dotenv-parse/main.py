@@ -68,9 +68,11 @@ def main():
         print("usage: prog <file>", file=sys.stderr)
         sys.exit(2)
     try:
-        with open(sys.argv[1], encoding="utf-8") as f:
+        # newline="" keeps bare \r out of universal-newline translation:
+        # only \n separates lines, per the spec.
+        with open(sys.argv[1], encoding="utf-8", newline="") as f:
             text = f.read()
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
         print(e, file=sys.stderr)
         sys.exit(1)
     env = parse(text)

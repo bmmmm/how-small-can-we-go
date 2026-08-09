@@ -21,14 +21,18 @@ prog <file>
 
 ## Input dialect
 
-Lines are separated by `\n`; a trailing `\r` on a line is stripped
-(CRLF input is fine).
+The file must be valid UTF-8; anything else is invalid (exit nonzero).
+Lines are separated by `\n` — a bare `\r` is not a line separator; a
+trailing `\r` on a line is stripped (CRLF input is fine). Whitespace
+in this spec means ASCII space and tab.
 
 - A line whose content is empty after trimming whitespace, or whose
   first non-whitespace character is `#`, is ignored.
 - Every other line must be `KEY=VALUE`, optionally prefixed with
   `export` and whitespace. Whitespace around `=` is allowed and
-  ignored.
+  ignored. After the `export` prefix is stripped, the same rules
+  apply — `export = 1` is invalid (empty key), while `export=1`
+  assigns the key `export`.
 - KEY matches `[A-Za-z_][A-Za-z0-9_]*` (ASCII only). Anything else is
   invalid.
 - VALUE, after trimming surrounding whitespace:

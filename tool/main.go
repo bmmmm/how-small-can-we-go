@@ -31,7 +31,8 @@ check    Build an entry, run its task's test cases, print the verdict.
 score    Print the trust score of an entry: "<third-party bytes>
          <hazards>". Every hazard hit and every raw-scanned file is
          named on stderr.
-board    Re-check every entry and write board.json + index.html.
+board    Re-check every entry and write board.json + index.html
+         (default --out docs).
 
 Exit codes: 0 pass · 1 fail · 2 usage · 3 infrastructure failure
 (sandbox/runner broke — no verdict, retry instead of judging the entry).
@@ -60,12 +61,20 @@ func main() {
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "arena: %v\n", err)
-		if errors.Is(err, arena.ErrInfra) {
+		switch {
+		case errors.Is(err, arena.ErrInfra):
 			os.Exit(3)
+		case errors.Is(err, errUsage):
+			// Wrappers branch on the documented codes — a mistyped
+			// invocation must never read as a failing entry.
+			os.Exit(2)
 		}
 		os.Exit(1)
 	}
 }
+
+// errUsage marks errors of the invocation, not of any entry.
+var errUsage = errors.New("usage error")
 
 func versionString() string {
 	if version != "dev" {
@@ -79,8 +88,9 @@ func versionString() string {
 
 // flagsFirst reorders args so flags precede positionals — Go's flag
 // package stops at the first non-flag, but "arena check <dir> --json"
-// is how people (and agents) naturally type it. All our flags are
-// booleans, so reordering is safe.
+// is how people (and agents) naturally type it. Only safe for
+// boolean-flag commands: a value flag like board's --out would have
+// its value reordered away from it, so cmdBoard must not use this.
 func flagsFirst(args []string) []string {
 	var flags, rest []string
 	for _, a := range args {

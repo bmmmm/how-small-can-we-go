@@ -217,11 +217,13 @@ func execute(dir, image string, argv []string, opts Options, timeout time.Durati
 		var ee *exec.ExitError
 		if errors.As(runErr, &ee) {
 			// docker run reserves 125 for "docker itself failed" — the
-			// container never ran. A program deliberately exiting 125
-			// inside the container is indistinguishable; that false
-			// positive only defers the PR to a human, never rejects.
-			if opts.Sandbox && ee.ExitCode() == 125 {
-				return nil, nil, -1, fmt.Errorf("%w: docker run exit 125: %s", ErrInfra, tail(errBuf.Bytes(), 500))
+			// container never ran. A daemon that is down or unreachable
+			// exits 1 from the CLI instead, so that case is recognized
+			// by its message. A program printing the same string and
+			// exiting 1 is indistinguishable; both false positives only
+			// defer the PR to a human, never reject.
+			if opts.Sandbox && (ee.ExitCode() == 125 || dockerDaemonDown(errBuf.Bytes())) {
+				return nil, nil, -1, fmt.Errorf("%w: docker run exit %d: %s", ErrInfra, ee.ExitCode(), tail(errBuf.Bytes(), 500))
 			}
 			return outBuf.Bytes(), errBuf.Bytes(), ee.ExitCode(), nil
 		}
@@ -235,6 +237,23 @@ func execute(dir, image string, argv []string, opts Options, timeout time.Durati
 		return nil, nil, -1, fmt.Errorf("%v — is %s available?", runErr, argv[0])
 	}
 	return outBuf.Bytes(), errBuf.Bytes(), 0, nil
+}
+
+// dockerDaemonDown recognizes the docker CLI's own "cannot reach the
+// daemon" complaints, which exit 1 — indistinguishable from a program
+// exit by code alone.
+func dockerDaemonDown(stderr []byte) bool {
+	for _, sig := range []string{
+		"Cannot connect to the Docker daemon",
+		"error during connect",
+		"docker daemon is not running",
+		"dial unix /var/run/docker.sock",
+	} {
+		if bytes.Contains(stderr, []byte(sig)) {
+			return true
+		}
+	}
+	return false
 }
 
 // copyTree copies src into dst. Symlinks are rejected — an entry or test

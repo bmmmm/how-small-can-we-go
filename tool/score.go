@@ -11,7 +11,7 @@ import (
 
 func cmdScore(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("score: exactly one entry directory expected")
+		return fmt.Errorf("%w: score: exactly one entry directory expected", errUsage)
 	}
 	man, err := arena.LoadManifest(args[0])
 	if err != nil {

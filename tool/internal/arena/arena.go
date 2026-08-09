@@ -30,6 +30,11 @@ type Language struct {
 	Extensions []string `json:"extensions"`
 	Strip      *Strip   `json:"strip,omitempty"`
 	Hazards    []Hazard `json:"hazards,omitempty"`
+	// CollapseSplices joins backslash-newline continuations before any
+	// scan. C splices in translation phase 2, python and bash join
+	// physical lines before tokenizing — without this, `sys\<nl>tem(`
+	// compiles to system() but matches no pattern.
+	CollapseSplices bool `json:"collapseSplices,omitempty"`
 }
 
 // maxManifestBytes bounds entry.json. The manifest is metadata, so it
