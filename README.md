@@ -86,7 +86,15 @@ cd tool && go build -o ../arena . && cd ..
 ./arena check entries/semver-range-check                # the real thing (needs docker)
 ./arena score entries/semver-range-check                # just the two numbers
 ./arena board --no-sandbox                              # render docs/ locally
+./scripts/smoke-test.sh                                 # end-to-end: real sandbox + gaming-resistance
 ```
+
+`scripts/smoke-test.sh` is the real-world check: it drives the built
+binary through the actual no-network docker sandbox and builds live
+evasion entries to prove the scorer still catches them. With no docker
+daemon it says so, asserts the daemon-down path reports INFRA rather
+than a false failure, and falls back to a host run. CI runs it on every
+`tool/` change.
 
 No docker? Push your branch — the entry-check workflow runs the real
 sandboxed measurement on branch pushes touching `entries/`, `tasks/`,

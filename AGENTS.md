@@ -53,6 +53,8 @@ README.md; binding rules live in SPEC.md.
    With docker available, drop `--no-sandbox` to reproduce CI exactly
    (no network, pinned image). If your entry only works with
    `--no-sandbox`, it depends on something you didn't ship — fix that.
+   `./scripts/smoke-test.sh` runs the whole thing end-to-end — real
+   sandbox plus scorer gaming-resistance probes.
 
    No docker and no PR yet? Push your branch (a fork works) — the
    entry-check workflow runs on branch pushes and via
