@@ -8,6 +8,8 @@ README.md; binding rules live in SPEC.md.
 - Current board: https://bmmmm.github.io/how-small-can-we-go/board.json
   (per entry: task, language, surface, pass/fail). A `"pass": false`
   champion defends nothing — any passing entry takes the niche.
+- Cheapest way in: the board's `"open"` array lists every niche with no
+  entry at all — there, the first passing entry wins, no surface to beat.
 - Task contracts: `tasks/<task>/spec.md` + the cases in
   `tasks/<task>/cases/`. The cases are normative; read them, don't guess.
 

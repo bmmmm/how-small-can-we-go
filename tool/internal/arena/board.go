@@ -75,12 +75,22 @@ func WriteBoard(results []Result, outDir, commit string, langs []string) error {
 		data.Tasks = append(data.Tasks, t)
 	}
 
+	// Open niches go into board.json too: agents read the JSON as
+	// ground truth, and an open niche is the cheapest way in.
+	open := []map[string]string{}
+	for _, t := range data.Tasks {
+		for _, l := range t.Open {
+			open = append(open, map[string]string{"task": t.Name, "language": l})
+		}
+	}
+
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
 	blob, err := json.MarshalIndent(map[string]any{
 		"commit":  commit,
 		"entries": results,
+		"open":    open,
 	}, "", "  ")
 	if err != nil {
 		return err

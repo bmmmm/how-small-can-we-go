@@ -19,6 +19,10 @@ count.
 3. Open a PR that replaces the niche directory. CI measures; it never
    believes. Beat the number or the PR closes.
 
+An entry is deliberately small ceremony: one 6-line `entry.json`
+manifest (excluded from measurement) plus your source files — that's
+the whole format, spelled out in [SPEC.md](SPEC.md).
+
 An empty niche (no entry yet for that task × language)? The first passing
 entry takes it.
 
