@@ -1,9 +1,9 @@
 # Closes entry PRs that CI already rejected, with the measured numbers.
-# Only not-improving challengers are closed; anything else — conformance
-# failures, removals, mixed PRs, unclassified runs — stays open for a
-# human.
-# Action majors verified 2026-08 via
-# `gh api repos/<owner>/<action>/releases/latest`.
+# Auto-closed: not-improving challengers and conformance failures — the
+# classes AGENTS.md rejects without discussion. Anything else (removals,
+# infra failures, mixed PRs, unclassified runs) stays open for a human.
+# The one action used here is pinned to a commit SHA; verify bumps
+# against the upstream repo before changing the pin.
 #
 # Security model. This workflow holds `pull-requests: write`, so it must
 # never touch PR content:
@@ -64,20 +64,34 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"
           else
             echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "artifact_id=$id" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download result
         if: steps.locate.outputs.found == 'true'
-        uses: actions/download-artifact@v8
-        with:
-          name: entry-check-result
-          path: ${{ runner.temp }}/entry-check-result
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACT_ID: ${{ steps.locate.outputs.artifact_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          gh api "repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip" > result.zip
+          # The zip comes from the untrusted job: extract exactly the
+          # one expected member to a pipe — no zip-chosen path ever
+          # touches the filesystem — and enforce the cap on the
+          # decompressed bytes; the filter above only saw the zip size.
+          # Any unzip failure fails the step, which skips the close.
+          mkdir -p entry-check-result
+          unzip -p result.zip result.json > entry-check-result/result.json
+          if [ "$(wc -c < entry-check-result/result.json)" -gt 65536 ]; then
+            echo "result.json exceeds the 64 KiB cap — refusing to act on it."
+            exit 1
+          fi
 
       - name: Verify and close
         if: steps.locate.outputs.found == 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RESULT_FILE: ${{ runner.temp }}/entry-check-result/result.json
         with:
@@ -88,21 +102,18 @@ jobs:
             // that fails a check aborts — we would rather leave a PR
             // open than close one on a payload we do not understand.
             const VERDICT_CLASSES = new Set([
-              'pass', 'not-improving', 'conformance-fail',
+              'pass', 'not-improving', 'conformance-fail', 'infra-error',
               'entry-removed', 'no-entry-changes', 'error',
             ]);
             const ENTRY_STATUSES = new Set([
               'new-niche', 'beats-champion', 'open-niche',
-              'not-improving', 'conformance-fail', 'removed',
+              'not-improving', 'conformance-fail', 'infra-error', 'removed',
             ]);
-            // AGENTS.md's auto-reject list also names conformance
-            // failures, but a transient sandbox failure (docker exit
-            // 125: rate-limited pull, daemon hiccup) is indistinguishable
-            // from a real one in the artifact — closing a correct PR is
-            // the worst failure mode, so until the runner reports infra
-            // errors as their own class, only the deterministic
-            // surface comparison auto-closes.
-            const AUTO_REJECT = new Set(['not-improving']);
+            // The classes AGENTS.md rejects without discussion. Since
+            // result schema 2 the runner reports sandbox failures
+            // (docker exit 125 etc.) as infra-error instead of blaming
+            // the entry, so conformance-fail is trustworthy here.
+            const AUTO_REJECT = new Set(['not-improving', 'conformance-fail']);
             const ENTRY_PATH = /^entries\/[a-z0-9-]+\/[a-z0-9-]+$/;
             const SHA = /^[0-9a-f]{40}$/;
             const MAX_BYTES = 65536;
@@ -132,7 +143,11 @@ jobs:
             if (data === null || typeof data !== 'object' || Array.isArray(data)) {
               return stop('result is not an object');
             }
-            if (data.schema !== 'entry-check-result/1') return stop('unknown result schema');
+            // Schema 2 is the first whose producer separates infra
+            // failures from conformance failures. A v1 artifact (a PR
+            // branched before that fix) may blame a docker hiccup on
+            // the entry — never auto-close on one.
+            if (data.schema !== 'entry-check-result/2') return stop('unknown result schema');
             if (!isCount(data.pr, 10000000) || data.pr < 1) return stop('invalid PR number');
             if (typeof data.head_sha !== 'string' || !SHA.test(data.head_sha)) {
               return stop('invalid head SHA');
@@ -180,11 +195,19 @@ jobs:
             if (entries.some((e) => e.status === 'removed')) {
               return stop('PR removes an entry — flagged for a maintainer (SPEC.md, gate 3)');
             }
+            if (entries.some((e) => e.status === 'infra-error')) {
+              return stop('an entry has no verdict (infra failure) — a human decides');
+            }
             if (data.touched_other) {
               return stop('PR also touches files outside entries/ — a maintainer decides');
             }
-            const cited = entries.filter((e) => e.status === data.class);
-            if (cited.length === 0) return stop('verdict class has no matching entry');
+            // Cite every failing entry, not just the dominant class —
+            // a mixed PR deserves the full picture in one comment.
+            const notImproving = entries.filter((e) => e.status === 'not-improving');
+            const failing = entries.filter((e) => e.status === 'conformance-fail');
+            if (!entries.some((e) => e.status === data.class)) {
+              return stop('verdict class has no matching entry');
+            }
 
             // Bind the artifact's PR number to the run that produced it.
             let pr;
@@ -208,7 +231,7 @@ jobs:
             }
 
             const marker = `<!-- entry-close ${run.head_sha} -->`;
-            const { data: comments } = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: data.pr, per_page: 100,
             });
             if (comments.some((c) => typeof c.body === 'string' && c.body.includes(marker))) {
@@ -217,25 +240,12 @@ jobs:
 
             // Built from validated values only: paths matched against
             // ENTRY_PATH, surfaces are integers, the rest is literal.
-            const lines = [marker, ''];
-            if (data.class === 'not-improving') {
-              lines.push('Closing: the challenger does not beat the champion.', '');
-              for (const e of cited) {
-                lines.push(`- \`${e.path}\` — challenger surface **${e.surface}**, champion **${e.champion}**`);
-              }
-              lines.push(
-                '',
-                'SPEC.md, gate 1: replacing a champion requires a strictly smaller audit surface. Equal is not smaller.',
-              );
-            } else {
-              lines.push('Closing: the entry does not pass the task\'s cases.', '');
-              for (const e of cited) {
-                lines.push(`- \`${e.path}\` — conformance failed; the entry-check log names the failing case and why`);
-              }
-              lines.push(
-                '',
-                'SPEC.md, gate 4: measurement, conformance and the text-only rule all have to pass.',
-              );
+            const lines = [marker, '', 'Closing: no entry in this PR clears the gates.', ''];
+            for (const e of notImproving) {
+              lines.push(`- \`${e.path}\` — challenger surface **${e.surface}**, champion **${e.champion}**: replacing a champion requires a strictly smaller audit surface, equal is not smaller (SPEC.md, gate 1)`);
+            }
+            for (const e of failing) {
+              lines.push(`- \`${e.path}\` — conformance failed; the entry-check log names the failing case and why (SPEC.md, gate 4)`);
             }
             lines.push(
               '',

@@ -25,6 +25,7 @@ type Options struct {
 type CaseResult struct {
 	Name   string `json:"name"`
 	Pass   bool   `json:"pass"`
+	Infra  bool   `json:"infra,omitempty"` // sandbox/runner failure — no verdict on the entry
 	Detail string `json:"detail,omitempty"`
 }
 
@@ -36,6 +37,7 @@ type Result struct {
 	Measure  Measure      `json:"measure"`
 	Cases    []CaseResult `json:"cases,omitempty"`
 	Pass     bool         `json:"pass"`
+	Infra    bool         `json:"infra,omitempty"` // some failure was infrastructure, not the entry
 	Err      string       `json:"error,omitempty"`
 }
 
@@ -43,6 +45,15 @@ const (
 	buildTimeout = 2 * time.Minute
 	caseTimeout  = 20 * time.Second
 )
+
+// ErrInfra marks failures of the harness or sandbox itself — docker
+// missing, or the daemon failing before the container ran (exit 125:
+// rate-limited pull, daemon hiccup). Such a case has no verdict:
+// counting it as a conformance failure would let a transient outage
+// reject a correct entry, and counting exit 125 as the program's own
+// exit would satisfy `exit: nonzero` cases. A timeout is NOT infra —
+// a program that outruns the cap is a verdict on the entry.
+var ErrInfra = errors.New("infrastructure failure")
 
 // CheckEntry validates one entry: manifest, measurement, offline build,
 // and every test case of its task.
@@ -86,6 +97,7 @@ func CheckEntry(entryDir string, opts Options) Result {
 	if man.Build != "" {
 		_, stderr, code, err := execute(buildDir, lang.Image, strings.Fields(man.Build), opts, buildTimeout)
 		if err != nil {
+			res.Infra = errors.Is(err, ErrInfra)
 			return fail("build: %v", err)
 		}
 		if code != 0 {
@@ -99,6 +111,9 @@ func CheckEntry(entryDir string, opts Options) Result {
 		res.Cases = append(res.Cases, cr)
 		if !cr.Pass {
 			res.Pass = false
+		}
+		if cr.Infra {
+			res.Infra = true
 		}
 	}
 	return res
@@ -136,6 +151,7 @@ func runCase(buildDir, caseDir, name, image string, runArgv []string, opts Optio
 	argv := append(append([]string{}, runArgv...), args...)
 	stdout, stderr, code, err := execute(work, image, argv, opts, caseTimeout)
 	if err != nil {
+		cr.Infra = errors.Is(err, ErrInfra)
 		cr.Detail = fmt.Sprintf("run: %v", err)
 		return cr
 	}
@@ -188,13 +204,23 @@ func execute(dir, image string, argv []string, opts Options, timeout time.Durati
 	if runErr != nil {
 		var ee *exec.ExitError
 		if errors.As(runErr, &ee) {
+			// docker run reserves 125 for "docker itself failed" — the
+			// container never ran. A program deliberately exiting 125
+			// inside the container is indistinguishable; that false
+			// positive only defers the PR to a human, never rejects.
+			if opts.Sandbox && ee.ExitCode() == 125 {
+				return nil, nil, -1, fmt.Errorf("%w: docker run exit 125: %s", ErrInfra, tail(errBuf.Bytes(), 500))
+			}
 			return outBuf.Bytes(), errBuf.Bytes(), ee.ExitCode(), nil
 		}
-		hint := argv[0]
 		if opts.Sandbox {
-			hint = "docker (install it or use --no-sandbox for local checks)"
+			// argv[0] is always docker here, so a start failure is the
+			// host's problem, never the entry's.
+			return nil, nil, -1, fmt.Errorf("%w: %v — is docker available? (or use --no-sandbox for local checks)", ErrInfra, runErr)
 		}
-		return nil, nil, -1, fmt.Errorf("%v — is %s available?", runErr, hint)
+		// Without the sandbox, argv comes from the manifest's run/build
+		// command: failing to start it is a verdict on the entry.
+		return nil, nil, -1, fmt.Errorf("%v — is %s available?", runErr, argv[0])
 	}
 	return outBuf.Bytes(), errBuf.Bytes(), 0, nil
 }

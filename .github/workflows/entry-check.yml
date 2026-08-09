@@ -40,6 +40,10 @@ jobs:
 
       - name: Check changed entries
         env:
+          # Base at event time. If main advanced since, the champion
+          # compared against may be stale — safe, because a champion
+          # only ever shrinks: not-improving vs the old one implies
+          # not-improving vs the new one.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           arena="$RUNNER_TEMP/arena"
@@ -69,8 +73,18 @@ jobs:
               fail=1
               continue
             fi
-            if "$arena" check "$d"; then
+            # arena exit codes: 0 pass, 1 fail, 3 infra (sandbox broke,
+            # no verdict). infra must never read as the entry failing —
+            # that distinction is what keeps the close bot honest.
+            rc=0
+            "$arena" check "$d" || rc=$?
+            if [ "$rc" -eq 0 ]; then
               summary "- ✅ conformance: all cases pass"
+            elif [ "$rc" -eq 3 ]; then
+              summary "- ⚠️ infra failure — the sandbox broke, not the entry; re-run this job"
+              record "$d" infra-error
+              fail=1
+              continue
             else
               summary "- ❌ conformance failed — the job log shows the failing case and why"
               record "$d" conformance-fail
@@ -83,13 +97,21 @@ jobs:
               if [ "$new" -lt "$old" ]; then
                 summary "- ✅ surface: $new < $old — champion beaten"
                 record "$d" beats-champion "$new" "$old"
-              elif (cd "$RUNNER_TEMP/base" && "$arena" check "$d"); then
-                summary "- ❌ surface: $new, champion: $old — a challenger must be strictly smaller (SPEC.md, gate 1)"
-                record "$d" not-improving "$new" "$old"
-                fail=1
               else
-                summary "- ✅ surface: $new — champion was failing, the niche was open"
-                record "$d" open-niche "$new" "$old"
+                base_rc=0
+                (cd "$RUNNER_TEMP/base" && "$arena" check "$d") || base_rc=$?
+                if [ "$base_rc" -eq 3 ]; then
+                  summary "- ⚠️ infra failure while re-checking the champion — no verdict; re-run this job"
+                  record "$d" infra-error
+                  fail=1
+                elif [ "$base_rc" -eq 0 ]; then
+                  summary "- ❌ surface: $new, champion: $old — a challenger must be strictly smaller (SPEC.md, gate 1)"
+                  record "$d" not-improving "$new" "$old"
+                  fail=1
+                else
+                  summary "- ✅ surface: $new — champion was failing, the niche was open"
+                  record "$d" open-niche "$new" "$old"
+                fi
               fi
             else
               summary "- ✅ surface: $new — new niche"
@@ -147,12 +169,16 @@ jobs:
             touched_other=true
           fi
           if [ -f "$RUNNER_TEMP/check-complete" ]; then
+            # infra outranks the failure classes: one entry without a
+            # verdict poisons the whole run for auto-closing purposes.
             class=$(awk -F'\t' '
               $2 == "removed"          { removed = 1 }
+              $2 == "infra-error"      { infra = 1 }
               $2 == "conformance-fail" { failing = 1 }
               $2 == "not-improving"    { bigger = 1 }
               END {
                 if (removed)   print "entry-removed";
+                else if (infra)   print "infra-error";
                 else if (failing) print "conformance-fail";
                 else if (bigger)  print "not-improving";
                 else if (NR > 0)  print "pass";
@@ -170,15 +196,15 @@ jobs:
             --argjson other "$touched_other" \
             --rawfile tsv "$tsv" \
             '{
-               schema: "entry-check-result/1",
+               schema: "entry-check-result/2",
                pr: $pr,
                head_sha: $head,
                class: $class,
                touched_other: $other,
                entries: ($tsv | split("\n") | map(select(length > 0)) | map(split("\t")) | map(
                  { path: (.[0] // ""), status: (.[1] // "") }
-                 + (.[2] // "" | if . == "" then {} else { surface: (tonumber? // .) } end)
-                 + (.[3] // "" | if . == "" then {} else { champion: (tonumber? // .) } end)
+                 + (.[2] // "" | if . == "" then {} else { surface: tonumber } end)
+                 + (.[3] // "" | if . == "" then {} else { champion: tonumber } end)
                ))
              }' > "$out/result.json"
           cat "$out/result.json"

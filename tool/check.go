@@ -25,12 +25,15 @@ func cmdCheck(args []string) error {
 	}
 	opts := arena.Options{RepoRoot: root, Sandbox: !*noSandbox}
 	var results []arena.Result
-	failed := 0
+	failed, infra := 0, false
 	for _, dir := range fs.Args() {
 		res := arena.CheckEntry(dir, opts)
 		results = append(results, res)
 		if !res.Pass {
 			failed++
+		}
+		if res.Infra {
+			infra = true
 		}
 		if !*asJSON {
 			printResult(res)
@@ -43,6 +46,11 @@ func cmdCheck(args []string) error {
 			return err
 		}
 	}
+	if infra {
+		// Wrapped so main can exit 3: this run holds no verdict and
+		// nothing downstream may treat it as a conformance failure.
+		return fmt.Errorf("%d of %d entries failed on an %w — retry, or check docker", failed, len(results), arena.ErrInfra)
+	}
 	if failed > 0 {
 		return fmt.Errorf("%d of %d entries failed", failed, len(results))
 	}
@@ -52,7 +60,7 @@ func cmdCheck(args []string) error {
 func printResult(r arena.Result) {
 	fmt.Printf("== %s (%s / %s)\n", r.Entry, r.Task, r.Language)
 	if r.Err != "" {
-		fmt.Printf("   FAIL  %s\n", r.Err)
+		fmt.Printf("   %s  %s\n", failLabel(r.Infra), r.Err)
 		return
 	}
 	fmt.Printf("   surface: %d bytes   lines: %d   files: %d\n", r.Measure.Surface, r.Measure.Lines, r.Measure.Files)
@@ -60,12 +68,22 @@ func printResult(r arena.Result) {
 		if c.Pass {
 			fmt.Printf("   PASS  %s\n", c.Name)
 		} else {
-			fmt.Printf("   FAIL  %s\n         %s\n", c.Name, c.Detail)
+			fmt.Printf("   %s  %s\n         %s\n", failLabel(c.Infra), c.Name, c.Detail)
 		}
 	}
-	if r.Pass {
+	switch {
+	case r.Pass:
 		fmt.Println("   RESULT: PASS")
-	} else {
+	case r.Infra:
+		fmt.Println("   RESULT: INFRA — sandbox/runner failure, no verdict on the entry")
+	default:
 		fmt.Println("   RESULT: FAIL")
 	}
+}
+
+func failLabel(infra bool) string {
+	if infra {
+		return "INFRA"
+	}
+	return "FAIL"
 }

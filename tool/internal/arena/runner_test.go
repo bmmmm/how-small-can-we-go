@@ -82,6 +82,63 @@ func TestCheckEntryDetectsWrongExit(t *testing.T) {
 	}
 }
 
+// fakeDocker puts a docker stub with the given script body first in
+// PATH, so sandbox-mode tests run without a real daemon.
+func fakeDocker(t *testing.T, script string) {
+	t.Helper()
+	bin := t.TempDir()
+	path := filepath.Join(bin, "docker")
+	writeFile(t, path, "#!/bin/sh\n"+script)
+	if err := os.Chmod(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+}
+
+// docker exit 125 means the container never ran (daemon error, e.g. a
+// rate-limited pull). That is no verdict on the entry — and it must not
+// satisfy `exit: nonzero` cases either.
+func TestSandboxDockerDaemonFailureIsInfra(t *testing.T) {
+	fakeDocker(t, "echo 'docker: Error response from daemon: toomanyrequests' >&2\nexit 125\n")
+	root := testRepo(t)
+	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root, Sandbox: true})
+	if !res.Infra {
+		t.Fatalf("docker exit 125 not classified as infra: %+v", res)
+	}
+	if res.Pass {
+		t.Fatal("docker exit 125 produced a PASS verdict")
+	}
+	for _, c := range res.Cases {
+		if c.Pass {
+			t.Errorf("case %s passed on docker exit 125 — the exit:nonzero mirror bug", c.Name)
+		}
+	}
+}
+
+// Exit 1 in sandbox mode is the program's own exit code, not docker's:
+// it must stay a regular verdict, or every failing entry would read as
+// an infra problem.
+func TestSandboxProgramExitIsAVerdict(t *testing.T) {
+	fakeDocker(t, "exit 1\n")
+	root := testRepo(t)
+	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root, Sandbox: true})
+	if res.Infra {
+		t.Fatalf("program exit 1 misclassified as infra: %+v", res)
+	}
+	for _, c := range res.Cases {
+		switch c.Name {
+		case "hello": // expects exit 0
+			if c.Pass {
+				t.Error("hello passed although the program exited 1")
+			}
+		case "missing": // expects nonzero
+			if !c.Pass {
+				t.Errorf("missing failed although exit 1 satisfies nonzero: %s", c.Detail)
+			}
+		}
+	}
+}
+
 func TestCheckEntryRejectsUnknownLanguage(t *testing.T) {
 	root := testRepo(t)
 	writeFile(t, filepath.Join(root, "entries/echo-file/sh/entry.json"),

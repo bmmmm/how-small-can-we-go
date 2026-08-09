@@ -30,7 +30,13 @@ func cmdBoard(args []string) error {
 	var results []arena.Result
 	for _, d := range dirs {
 		fmt.Fprintf(os.Stderr, "checking %s\n", d)
-		results = append(results, arena.CheckEntry(d, opts))
+		res := arena.CheckEntry(d, opts)
+		if res.Infra {
+			// A docker hiccup must not publish a board that shows a
+			// healthy entry as failing — abort instead.
+			return fmt.Errorf("%s: %w — no board written, retry", d, arena.ErrInfra)
+		}
+		results = append(results, res)
 	}
 	commit := os.Getenv("GITHUB_SHA")
 	if commit == "" {

@@ -6,9 +6,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime/debug"
+
+	"github.com/bmmmm/how-small-can-we-go/tool/internal/arena"
 )
 
 var version = "dev"
@@ -26,6 +29,9 @@ check    Build an entry, run its task's test cases, print the verdict.
          docker); --no-sandbox executes on the host for local iteration.
 surface  Print the audit surface (non-whitespace bytes) of a directory.
 board    Re-check every entry and write board.json + index.html.
+
+Exit codes: 0 pass · 1 fail · 2 usage · 3 infrastructure failure
+(sandbox/runner broke — no verdict, retry instead of judging the entry).
 
 Run from the repository root.
 `
@@ -51,6 +57,9 @@ func main() {
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "arena: %v\n", err)
+		if errors.Is(err, arena.ErrInfra) {
+			os.Exit(3)
+		}
 		os.Exit(1)
 	}
 }
