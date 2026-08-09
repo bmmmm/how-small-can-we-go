@@ -21,9 +21,12 @@ type Manifest struct {
 	Run      string   `json:"run"`
 }
 
-// Language is one allowed language from languages.json.
+// Language is one allowed language from languages.json. Syntax enables
+// audit-unit pricing; a language without one is priced at plain bytes
+// and ships verbatim.
 type Language struct {
-	Image string `json:"image"`
+	Image  string  `json:"image"`
+	Syntax *Syntax `json:"syntax,omitempty"`
 }
 
 func LoadManifest(entryDir string) (Manifest, error) {
@@ -57,6 +60,15 @@ func LoadLanguages(repoRoot string) (map[string]Language, error) {
 	var langs map[string]Language
 	if err := json.Unmarshal(b, &langs); err != nil {
 		return nil, fmt.Errorf("%s is not valid JSON: %w", path, err)
+	}
+	for name, lang := range langs {
+		if lang.Syntax == nil {
+			continue
+		}
+		if err := lang.Syntax.compile(); err != nil {
+			return nil, fmt.Errorf("%s: language %q: %w", path, name, err)
+		}
+		langs[name] = lang
 	}
 	return langs, nil
 }

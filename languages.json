@@ -1,7 +1,64 @@
 {
-  "c": { "image": "gcc:14" },
-  "go": { "image": "golang:1.26-alpine" },
-  "python": { "image": "python:3.13-alpine" },
-  "rust": { "image": "rust:1.83-alpine" },
+  "c": {
+    "image": "gcc:14",
+    "syntax": {
+      "lineComments": ["//"],
+      "blockComments": [["/*", "*/"]],
+      "strings": [
+        { "open": "\"", "close": "\"", "escape": "\\" },
+        { "open": "'", "close": "'", "escape": "\\" }
+      ],
+      "noDiscountFile": ["\\?\\?/", "#\\s*define.*#"]
+    }
+  },
+  "go": {
+    "image": "golang:1.26-alpine",
+    "syntax": {
+      "lineComments": ["//"],
+      "blockComments": [["/*", "*/"]],
+      "strings": [
+        { "open": "\"", "close": "\"", "escape": "\\" },
+        { "open": "`", "close": "`", "multiline": true },
+        { "open": "'", "close": "'", "escape": "\\" }
+      ],
+      "blockCommentIsNewline": true,
+      "noDiscountFile": ["\\breflect\\b"],
+      "keepComments": ["^//go:", "^//line ", "^//export "]
+    }
+  },
+  "python": {
+    "image": "python:3.13-alpine",
+    "syntax": {
+      "lineComments": ["#"],
+      "strings": [
+        { "open": "\"\"\"", "close": "\"\"\"", "escape": "\\", "multiline": true },
+        { "open": "'''", "close": "'''", "escape": "\\", "multiline": true },
+        { "open": "\"", "close": "\"", "escape": "\\" },
+        { "open": "'", "close": "'", "escape": "\\" }
+      ],
+      "wsSensitive": true,
+      "noDiscountFile": [
+        "__",
+        "\\b(globals|locals|vars|dir|eval|exec|getattr|setattr|delattr|compile|breakpoint|help)\\s*\\(",
+        "\\b(inspect|ctypes|pickle|marshal)\\b",
+        "[fF][rRbB]?[\"']{3}",
+        "[rRbB][fF][\"']{3}"
+      ],
+      "noDiscountFileExempt": ["if __name__ == \"__main__\":", "if __name__ == '__main__':", "__init__"],
+      "noDiscountLine": ["[fF][rRbB]?[\"']", "[rRbB][fF][\"']"],
+      "keepComments": ["^#!", "coding[:=]"]
+    }
+  },
+  "rust": {
+    "image": "rust:1.83-alpine",
+    "syntax": {
+      "lineComments": ["//"],
+      "blockComments": [["/*", "*/"]],
+      "strings": [
+        { "open": "\"", "close": "\"", "escape": "\\", "multiline": true }
+      ],
+      "noDiscountFile": ["'\"", "\\br#*\"", "\\bbr", "stringify!", "macro_rules!"]
+    }
+  },
   "sh": { "image": "alpine:3.21" }
 }

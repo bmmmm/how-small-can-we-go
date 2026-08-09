@@ -21,13 +21,14 @@
 </head>
 <body>
 <h1>how small can we go?</h1>
-<p class="sub">The attack-surface golf arena. Surface = non-whitespace bytes of everything an
-entry ships. Every number was measured in a no-network sandbox — never claimed.
+<p class="sub">The attack-surface golf arena. Surface = audit units of everything an
+entry ships: comments free, identifiers flat, data per byte. Every number was
+measured in a no-network sandbox — never claimed.
 <a href="https://github.com/{{.Repo}}#the-game-in-60-seconds">How to play →</a></p>
 {{range .Tasks}}
 <h2>{{.Name}}</h2>
 <table>
-<tr><th>language</th><th class="num">surface (bytes)</th><th class="num">lines</th><th>status</th><th>entry</th><th>authors</th></tr>
+<tr><th>language</th><th class="num">surface (units)</th><th class="num">lines</th><th>status</th><th>entry</th><th>authors</th></tr>
 {{range .Rows}}
 <tr>
 <td>{{.Language}}{{if .Champion}} 🏆{{end}}</td>

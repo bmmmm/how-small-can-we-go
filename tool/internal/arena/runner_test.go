@@ -139,6 +139,18 @@ func TestSandboxProgramExitIsAVerdict(t *testing.T) {
 	}
 }
 
+// Whitespace is free to the metric but still ships — its volume must be
+// capped, or it becomes a data channel an entry reads back at runtime.
+func TestCheckEntryRejectsWhitespaceBloat(t *testing.T) {
+	root := testRepo(t)
+	writeFile(t, filepath.Join(root, "entries/echo-file/sh/main.sh"),
+		"cat \"$1\"\n"+strings.Repeat(" ", 5000))
+	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root})
+	if res.Err == "" || !strings.Contains(res.Err, "audit units") {
+		t.Errorf("whitespace bloat not rejected: %+v", res)
+	}
+}
+
 func TestCheckEntryRejectsUnknownLanguage(t *testing.T) {
 	root := testRepo(t)
 	writeFile(t, filepath.Join(root, "entries/echo-file/sh/entry.json"),
