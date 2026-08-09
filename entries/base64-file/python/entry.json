@@ -1,0 +1,6 @@
+{
+  "task": "base64-file",
+  "language": "python",
+  "authors": ["bmmmm"],
+  "run": "python3 main.py"
+}

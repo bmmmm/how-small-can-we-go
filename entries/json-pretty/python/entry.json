@@ -1,0 +1,6 @@
+{
+  "task": "json-pretty",
+  "language": "python",
+  "authors": ["bmmmm"],
+  "run": "python3 main.py"
+}
