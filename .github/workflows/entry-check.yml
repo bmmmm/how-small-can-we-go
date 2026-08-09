@@ -2,6 +2,12 @@
 # rule (strictly smaller surface than the champion). Case PRs get an
 # informational impact run. Action majors verified 2026-08 via
 # `gh api repos/<owner>/<action>/releases/latest`.
+#
+# This workflow executes untrusted PR code and its own file comes from
+# the PR head, so everything it produces — including the result artifact
+# — is attacker-controlled data. It therefore holds no write scopes. The
+# `entry-check-result` artifact is consumed by entry-close.yml, which
+# runs from the default branch and validates every field before use.
 name: entry-check
 
 on:
@@ -37,10 +43,21 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           arena="$RUNNER_TEMP/arena"
+          tsv="$RUNNER_TEMP/entries.tsv"
+          : > "$tsv"
           summary() { echo "$@" >> "$GITHUB_STEP_SUMMARY"; }
+          # Verdicts for the result artifact — mirrors the summary lines,
+          # never influences the gate below.
+          record() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "${3-}" "${4-}" >> "$tsv"; }
+          # TODO: git's rename detection folds "delete entries/a/x + add
+          # entries/a/y with identical content" into a single R100 line,
+          # so --name-only reports only the new path and the gate-3
+          # removal check below never sees it. --no-renames fixes it, but
+          # that changes enforcement — separate PR.
           mapfile -t dirs < <(git diff --name-only "$BASE_SHA"...HEAD -- entries/ | cut -d/ -f1-3 | sort -u)
           if [ "${#dirs[@]}" -eq 0 ]; then
             summary "No entry changes."
+            : > "$RUNNER_TEMP/check-complete"
             exit 0
           fi
           git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
@@ -49,6 +66,7 @@ jobs:
             summary "## $d"
             if [ ! -d "$d" ]; then
               summary "- ❌ entry removed — entries leave the board by being beaten, not deleted (SPEC.md, gate 3)"
+              record "$d" removed
               fail=1
               continue
             fi
@@ -56,6 +74,7 @@ jobs:
               summary "- ✅ conformance: all cases pass"
             else
               summary "- ❌ conformance failed — the job log shows the failing case and why"
+              record "$d" conformance-fail
               fail=1
               continue
             fi
@@ -64,16 +83,21 @@ jobs:
               old=$(cd "$RUNNER_TEMP/base" && "$arena" surface "$d")
               if [ "$new" -lt "$old" ]; then
                 summary "- ✅ surface: $new < $old — champion beaten"
+                record "$d" beats-champion "$new" "$old"
               elif (cd "$RUNNER_TEMP/base" && "$arena" check "$d"); then
                 summary "- ❌ surface: $new, champion: $old — a challenger must be strictly smaller (SPEC.md, gate 1)"
+                record "$d" not-improving "$new" "$old"
                 fail=1
               else
                 summary "- ✅ surface: $new — champion was failing, the niche was open"
+                record "$d" open-niche "$new" "$old"
               fi
             else
               summary "- ✅ surface: $new — new niche"
+              record "$d" new-niche "$new"
             fi
           done
+          : > "$RUNNER_TEMP/check-complete"
           exit "$fail"
 
       - name: Case impact (informational)
@@ -100,3 +124,76 @@ jobs:
             done
           done
           exit 0
+
+      # Everything below is reporting only: both steps are
+      # continue-on-error so a hiccup here can never flip the gate above.
+      - name: Emit result
+        if: always()
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          out="$RUNNER_TEMP/entry-check-result"
+          tsv="$RUNNER_TEMP/entries.tsv"
+          mkdir -p "$out"
+          [ -f "$tsv" ] || : > "$tsv"
+          # A PR that also moves cases, a task spec or languages.json is
+          # never a plain challenger — entry-close leaves those to a human.
+          touched_tasks=false
+          touched_languages=false
+          if [ -n "$(git diff --name-only "$BASE_SHA"...HEAD -- tasks/)" ]; then
+            touched_tasks=true
+          fi
+          if [ -n "$(git diff --name-only "$BASE_SHA"...HEAD -- languages.json)" ]; then
+            touched_languages=true
+          fi
+          if [ -f "$RUNNER_TEMP/check-complete" ]; then
+            class=$(awk -F'\t' '
+              $2 == "removed"          { removed = 1 }
+              $2 == "conformance-fail" { failing = 1 }
+              $2 == "not-improving"    { bigger = 1 }
+              END {
+                if (removed)   print "entry-removed";
+                else if (failing) print "conformance-fail";
+                else if (bigger)  print "not-improving";
+                else if (NR > 0)  print "pass";
+                else              print "no-entry-changes";
+              }' "$tsv")
+          else
+            # The gate step never reached its end (build broke, runner
+            # died, …) — no verdict, so nothing downstream may act.
+            class=error
+          fi
+          jq -n \
+            --argjson pr "$PR_NUMBER" \
+            --arg head "$HEAD_SHA" \
+            --arg class "$class" \
+            --argjson tasks "$touched_tasks" \
+            --argjson languages "$touched_languages" \
+            --rawfile tsv "$tsv" \
+            '{
+               schema: "entry-check-result/1",
+               pr: $pr,
+               head_sha: $head,
+               class: $class,
+               touched_tasks: $tasks,
+               touched_languages: $languages,
+               entries: ($tsv | split("\n") | map(select(length > 0)) | map(split("\t")) | map(
+                 { path: (.[0] // ""), status: (.[1] // "") }
+                 + (.[2] // "" | if . == "" then {} else { surface: (tonumber? // .) } end)
+                 + (.[3] // "" | if . == "" then {} else { champion: (tonumber? // .) } end)
+               ))
+             }' > "$out/result.json"
+          cat "$out/result.json"
+
+      - name: Upload result
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: entry-check-result
+          path: ${{ runner.temp }}/entry-check-result/result.json
+          if-no-files-found: ignore
+          retention-days: 1

@@ -1,0 +1,245 @@
+# Closes entry PRs that CI already rejected, with the measured numbers.
+# Only the classes on AGENTS.md's auto-reject list are closed; anything
+# else — removals, mixed PRs, unclassified runs — stays open for a human.
+# Action majors verified 2026-08 via
+# `gh api repos/<owner>/<action>/releases/latest`.
+#
+# Security model. This workflow holds `pull-requests: write`, so it must
+# never touch PR content:
+#
+#   - `workflow_run` runs the default-branch copy of this file, so a PR
+#     cannot edit what runs here.
+#   - There is no checkout. No PR code, no PR-authored action, nothing
+#     from the head repository is fetched or executed.
+#   - The `entry-check-result` artifact comes out of the untrusted job
+#     and is treated as hostile data: size-capped, JSON-parsed, and every
+#     field checked against a fixed enum or pattern before use. A field
+#     that does not validate aborts the whole run instead of being
+#     sanitized.
+#   - `workflow_run.pull_requests` is empty for fork PRs, so the PR
+#     number comes from the artifact — and is then verified against the
+#     API: the PR must be open, target this repository, and its head
+#     repo/branch/SHA must equal the triggering run's. A forged number
+#     therefore cannot reach a PR other than the attacker's own.
+name: entry-close
+
+on:
+  workflow_run:
+    workflows: [entry-check]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: entry-close-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  close:
+    # Only a failed check of a pull request can reject anything.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      pull-requests: write
+    steps:
+      - name: Locate result artifact
+        id: locate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Size cap before download: the producer is untrusted, and an
+          # oversized artifact is not worth unpacking on this runner.
+          id=$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts?per_page=100" --jq \
+            '[.artifacts[] | select(.name == "entry-check-result" and .expired == false and .size_in_bytes <= 65536)] | first | .id // empty')
+          if [ -z "$id" ]; then
+            echo "No usable entry-check-result artifact on run $RUN_ID — nothing to do."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download result
+        if: steps.locate.outputs.found == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: entry-check-result
+          path: ${{ runner.temp }}/entry-check-result
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify and close
+        if: steps.locate.outputs.found == 'true'
+        uses: actions/github-script@v9
+        env:
+          RESULT_FILE: ${{ runner.temp }}/entry-check-result/result.json
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Every value read from the artifact is untrusted. Anything
+            // that fails a check aborts — we would rather leave a PR
+            // open than close one on a payload we do not understand.
+            const VERDICT_CLASSES = new Set([
+              'pass', 'not-improving', 'conformance-fail',
+              'entry-removed', 'no-entry-changes', 'error',
+            ]);
+            const ENTRY_STATUSES = new Set([
+              'new-niche', 'beats-champion', 'open-niche',
+              'not-improving', 'conformance-fail', 'removed',
+            ]);
+            // AGENTS.md, "Auto-reject list".
+            const AUTO_REJECT = new Set(['not-improving', 'conformance-fail']);
+            const ENTRY_PATH = /^entries\/[a-z0-9-]+\/[a-z0-9-]+$/;
+            const SHA = /^[0-9a-f]{40}$/;
+            const MAX_BYTES = 65536;
+            const MAX_ENTRIES = 50;
+
+            const stop = (why) => core.info(`no action: ${why}`);
+            const isCount = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
+
+            const run = context.payload.workflow_run;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            let raw;
+            try {
+              raw = fs.readFileSync(process.env.RESULT_FILE, 'utf8');
+            } catch {
+              return stop('result file missing or unreadable');
+            }
+            if (raw.length > MAX_BYTES) return stop('result file too large');
+
+            let data;
+            try {
+              data = JSON.parse(raw);
+            } catch {
+              return stop('result file is not valid JSON');
+            }
+            if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+              return stop('result is not an object');
+            }
+            if (data.schema !== 'entry-check-result/1') return stop('unknown result schema');
+            if (!isCount(data.pr, 10000000) || data.pr < 1) return stop('invalid PR number');
+            if (typeof data.head_sha !== 'string' || !SHA.test(data.head_sha)) {
+              return stop('invalid head SHA');
+            }
+            if (data.head_sha !== run.head_sha) {
+              return stop('result head SHA does not match the triggering run');
+            }
+            if (typeof data.class !== 'string' || !VERDICT_CLASSES.has(data.class)) {
+              return stop('unknown verdict class');
+            }
+            if (typeof data.touched_tasks !== 'boolean' || typeof data.touched_languages !== 'boolean') {
+              return stop('invalid scope flags');
+            }
+            if (!Array.isArray(data.entries) || data.entries.length > MAX_ENTRIES) {
+              return stop('invalid entry list');
+            }
+
+            const entries = [];
+            for (const item of data.entries) {
+              if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+                return stop('invalid entry record');
+              }
+              if (typeof item.path !== 'string' || !ENTRY_PATH.test(item.path)) {
+                return stop('invalid entry path');
+              }
+              if (typeof item.status !== 'string' || !ENTRY_STATUSES.has(item.status)) {
+                return stop('invalid entry status');
+              }
+              const entry = { path: item.path, status: item.status };
+              if (item.status === 'not-improving') {
+                if (!isCount(item.surface, 1000000000) || !isCount(item.champion, 1000000000)) {
+                  return stop('invalid surface numbers');
+                }
+                entry.surface = item.surface;
+                entry.champion = item.champion;
+              }
+              entries.push(entry);
+            }
+
+            // Close policy — only the classes AGENTS.md already rejects
+            // without discussion. Everything else is a maintainer call.
+            if (!AUTO_REJECT.has(data.class)) {
+              return stop(`verdict class "${data.class}" is not on the auto-reject list`);
+            }
+            if (entries.some((e) => e.status === 'removed')) {
+              return stop('PR removes an entry — flagged for a maintainer (SPEC.md, gate 3)');
+            }
+            if (data.touched_tasks || data.touched_languages) {
+              return stop('PR also touches tasks/ or languages.json — a maintainer decides');
+            }
+            const cited = entries.filter((e) => e.status === data.class);
+            if (cited.length === 0) return stop('verdict class has no matching entry');
+
+            // Bind the artifact's PR number to the run that produced it.
+            let pr;
+            try {
+              pr = (await github.rest.pulls.get({ owner, repo, pull_number: data.pr })).data;
+            } catch {
+              return stop(`PR #${data.pr} could not be read`);
+            }
+            if (pr.state !== 'open') return stop(`PR #${data.pr} is already closed`);
+            if (pr.base.repo.full_name !== `${owner}/${repo}`) {
+              return stop('PR does not target this repository');
+            }
+            if (pr.head.sha !== run.head_sha) return stop('PR head moved since the check ran');
+            if (pr.head.ref !== run.head_branch) {
+              return stop('PR head branch does not match the triggering run');
+            }
+            const runHeadRepo = run.head_repository && run.head_repository.full_name;
+            const prHeadRepo = pr.head.repo && pr.head.repo.full_name;
+            if (!runHeadRepo || !prHeadRepo || runHeadRepo !== prHeadRepo) {
+              return stop('PR head repository does not match the triggering run');
+            }
+
+            const marker = `<!-- entry-close ${run.head_sha} -->`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: data.pr, per_page: 100,
+            });
+            if (comments.some((c) => typeof c.body === 'string' && c.body.includes(marker))) {
+              return stop('this head SHA was already handled');
+            }
+
+            // Built from validated values only: paths matched against
+            // ENTRY_PATH, surfaces are integers, the rest is literal.
+            const lines = [marker, ''];
+            if (data.class === 'not-improving') {
+              lines.push('Closing: the challenger does not beat the champion.', '');
+              for (const e of cited) {
+                lines.push(`- \`${e.path}\` — challenger surface **${e.surface}**, champion **${e.champion}**`);
+              }
+              lines.push(
+                '',
+                'SPEC.md, gate 1: replacing a champion requires a strictly smaller audit surface. Equal is not smaller.',
+              );
+            } else {
+              lines.push('Closing: the entry does not pass the task\'s cases.', '');
+              for (const e of cited) {
+                lines.push(`- \`${e.path}\` — conformance failed; the entry-check log names the failing case and why`);
+              }
+              lines.push(
+                '',
+                'SPEC.md, gate 4: measurement, conformance and the text-only rule all have to pass.',
+              );
+            }
+            lines.push(
+              '',
+              `Measured by [entry-check](${run.html_url}) on \`${run.head_sha}\`.`,
+              'A strictly smaller entry that passes is welcome — open a new PR.',
+            );
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: data.pr, body: lines.join('\n'),
+            });
+            await github.rest.pulls.update({
+              owner, repo, pull_number: data.pr, state: 'closed',
+            });
+            core.info(`closed #${data.pr} (${data.class})`);
