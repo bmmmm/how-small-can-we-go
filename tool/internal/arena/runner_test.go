@@ -20,25 +20,27 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 // testRepo builds a minimal arena repo with an echo-file task and a
-// passing sh entry, checked in host mode (no docker in unit tests).
+// passing bash entry, checked in host mode (no docker in unit tests).
 func testRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "languages.json"), `{"sh": {"image": "alpine:3.21"}}`)
+	writeFile(t, filepath.Join(root, "languages.json"),
+		`{"bash": {"image": "bash:5.2", "extensions": [".sh"],
+		  "hazards": [{"pattern": "\\beval\\b", "why": "evaluates data as code"}]}}`)
 	writeFile(t, filepath.Join(root, "tasks/echo-file/cases/hello/args"), "f.txt")
 	writeFile(t, filepath.Join(root, "tasks/echo-file/cases/hello/files/f.txt"), "hi\n")
 	writeFile(t, filepath.Join(root, "tasks/echo-file/cases/hello/stdout"), "hi\n")
 	writeFile(t, filepath.Join(root, "tasks/echo-file/cases/missing/args"), "nope.txt")
 	writeFile(t, filepath.Join(root, "tasks/echo-file/cases/missing/exit"), "nonzero")
-	writeFile(t, filepath.Join(root, "entries/echo-file/sh/entry.json"),
-		`{"task": "echo-file", "language": "sh", "authors": ["test"], "run": "sh main.sh"}`)
-	writeFile(t, filepath.Join(root, "entries/echo-file/sh/main.sh"), "cat \"$1\"\n")
+	writeFile(t, filepath.Join(root, "entries/echo-file/entry.json"),
+		`{"task": "echo-file", "language": "bash", "authors": ["test"], "run": "sh main.sh"}`)
+	writeFile(t, filepath.Join(root, "entries/echo-file/main.sh"), "cat \"$1\"\n")
 	return root
 }
 
 func TestCheckEntryPasses(t *testing.T) {
 	root := testRepo(t)
-	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root})
+	res := CheckEntry(filepath.Join(root, "entries/echo-file"), Options{RepoRoot: root})
 	if res.Err != "" {
 		t.Fatalf("unexpected error: %s", res.Err)
 	}
@@ -48,8 +50,19 @@ func TestCheckEntryPasses(t *testing.T) {
 	if len(res.Cases) != 2 {
 		t.Fatalf("want 2 cases, got %d", len(res.Cases))
 	}
-	if res.Measure.Surface != 7+7 { // 7 content + len("main.sh")
-		t.Errorf("surface = %d, want 14", res.Measure.Surface)
+	if res.Score.VendoredBytes != 0 || res.Score.HazardCount != 0 {
+		t.Errorf("clean entry scored %d/%d, want 0/0", res.Score.VendoredBytes, res.Score.HazardCount)
+	}
+}
+
+// The niche is the directory: a manifest naming another task must fail.
+func TestCheckEntryRejectsTaskDirMismatch(t *testing.T) {
+	root := testRepo(t)
+	writeFile(t, filepath.Join(root, "entries/echo-file/entry.json"),
+		`{"task": "other-task", "language": "bash", "authors": ["test"], "run": "sh main.sh"}`)
+	res := CheckEntry(filepath.Join(root, "entries/echo-file"), Options{RepoRoot: root})
+	if res.Err == "" || !strings.Contains(res.Err, "must match") {
+		t.Errorf("task/directory mismatch not rejected: %+v", res)
 	}
 }
 
@@ -57,7 +70,7 @@ func TestCheckEntryPasses(t *testing.T) {
 func TestCheckEntryDetectsWrongOutput(t *testing.T) {
 	root := testRepo(t)
 	writeFile(t, filepath.Join(root, "tasks/echo-file/cases/hello/stdout"), "bye\n")
-	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root})
+	res := CheckEntry(filepath.Join(root, "entries/echo-file"), Options{RepoRoot: root})
 	if res.Pass {
 		t.Fatal("entry passed against a wrong expectation — the gate cannot go red")
 	}
@@ -76,7 +89,7 @@ func TestCheckEntryDetectsWrongExit(t *testing.T) {
 	root := testRepo(t)
 	// Expect nonzero for a file that exists: cat succeeds, case must fail.
 	writeFile(t, filepath.Join(root, "tasks/echo-file/cases/hello/exit"), "nonzero")
-	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root})
+	res := CheckEntry(filepath.Join(root, "entries/echo-file"), Options{RepoRoot: root})
 	if res.Pass {
 		t.Fatal("entry passed although exit expectation is nonzero")
 	}
@@ -101,7 +114,7 @@ func fakeDocker(t *testing.T, script string) {
 func TestSandboxDockerDaemonFailureIsInfra(t *testing.T) {
 	fakeDocker(t, "echo 'docker: Error response from daemon: toomanyrequests' >&2\nexit 125\n")
 	root := testRepo(t)
-	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root, Sandbox: true})
+	res := CheckEntry(filepath.Join(root, "entries/echo-file"), Options{RepoRoot: root, Sandbox: true})
 	if !res.Infra {
 		t.Fatalf("docker exit 125 not classified as infra: %+v", res)
 	}
@@ -121,7 +134,7 @@ func TestSandboxDockerDaemonFailureIsInfra(t *testing.T) {
 func TestSandboxProgramExitIsAVerdict(t *testing.T) {
 	fakeDocker(t, "exit 1\n")
 	root := testRepo(t)
-	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root, Sandbox: true})
+	res := CheckEntry(filepath.Join(root, "entries/echo-file"), Options{RepoRoot: root, Sandbox: true})
 	if res.Infra {
 		t.Fatalf("program exit 1 misclassified as infra: %+v", res)
 	}
@@ -139,14 +152,14 @@ func TestSandboxProgramExitIsAVerdict(t *testing.T) {
 	}
 }
 
-// entry.json is unmeasured, so it must never reach the run directory —
-// there it would be a covert data store readable at runtime.
+// entry.json is arena metadata, not part of the program — it must never
+// reach the run directory.
 func TestEntryJSONDoesNotShip(t *testing.T) {
 	root := testRepo(t)
 	// cat entry.json must fail in the working directory; the `missing`
 	// case (expects nonzero) passes only if the file is truly absent.
-	writeFile(t, filepath.Join(root, "entries/echo-file/sh/main.sh"), "cat entry.json\n")
-	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root})
+	writeFile(t, filepath.Join(root, "entries/echo-file/main.sh"), "cat entry.json\n")
+	res := CheckEntry(filepath.Join(root, "entries/echo-file"), Options{RepoRoot: root})
 	for _, c := range res.Cases {
 		if c.Name == "missing" && !c.Pass {
 			t.Errorf("entry.json was readable at runtime: %s", c.Detail)
@@ -156,51 +169,24 @@ func TestEntryJSONDoesNotShip(t *testing.T) {
 
 func TestLoadManifestRejectsUnknownFieldsAndBulk(t *testing.T) {
 	root := testRepo(t)
-	dir := filepath.Join(root, "entries/echo-file/sh")
+	dir := filepath.Join(root, "entries/echo-file")
 	writeFile(t, filepath.Join(dir, "entry.json"),
-		`{"task": "echo-file", "language": "sh", "authors": ["test"], "run": "sh main.sh", "d": "ZZZZ"}`)
+		`{"task": "echo-file", "language": "bash", "authors": ["test"], "run": "sh main.sh", "d": "ZZZZ"}`)
 	if _, err := LoadManifest(dir); err == nil {
-		t.Error("unknown manifest field accepted — unmeasured freight")
+		t.Error("unknown manifest field accepted — unreviewed freight")
 	}
 	writeFile(t, filepath.Join(dir, "entry.json"),
-		`{"task": "echo-file", "language": "sh", "authors": ["`+strings.Repeat("Z", 5000)+`"], "run": "sh main.sh"}`)
+		`{"task": "echo-file", "language": "bash", "authors": ["`+strings.Repeat("Z", 5000)+`"], "run": "sh main.sh"}`)
 	if _, err := LoadManifest(dir); err == nil {
 		t.Error("oversized manifest accepted")
 	}
 }
 
-// File names are priced: an auditor reads them, and unpriced names would
-// be a free data channel into the working directory.
-func TestMeasureDirPricesFilePaths(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "entry.json"), `{"ignored": true}`)
-	writeFile(t, filepath.Join(dir, "main.sh"), "cat \"$1\"\n")
-	m, err := MeasureDir(dir, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if m.Surface != 7+len("main.sh") {
-		t.Errorf("surface = %d, want %d — file paths cost 1 unit per byte", m.Surface, 7+len("main.sh"))
-	}
-}
-
-// Whitespace is free to the metric but still ships — its volume must be
-// capped, or it becomes a data channel an entry reads back at runtime.
-func TestCheckEntryRejectsWhitespaceBloat(t *testing.T) {
-	root := testRepo(t)
-	writeFile(t, filepath.Join(root, "entries/echo-file/sh/main.sh"),
-		"cat \"$1\"\n"+strings.Repeat(" ", 5000))
-	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root})
-	if res.Err == "" || !strings.Contains(res.Err, "audit units") {
-		t.Errorf("whitespace bloat not rejected: %+v", res)
-	}
-}
-
 func TestCheckEntryRejectsUnknownLanguage(t *testing.T) {
 	root := testRepo(t)
-	writeFile(t, filepath.Join(root, "entries/echo-file/sh/entry.json"),
+	writeFile(t, filepath.Join(root, "entries/echo-file/entry.json"),
 		`{"task": "echo-file", "language": "cobol", "authors": ["test"], "run": "run"}`)
-	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root})
+	res := CheckEntry(filepath.Join(root, "entries/echo-file"), Options{RepoRoot: root})
 	if res.Err == "" || !strings.Contains(res.Err, "languages.json") {
 		t.Errorf("unknown language not rejected: %+v", res)
 	}

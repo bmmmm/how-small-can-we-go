@@ -1,0 +1,4 @@
+MSG=line1
+line2
+LIT=a $b \n c
+SP=  padded  

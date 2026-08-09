@@ -1,9 +1,0 @@
-{
-  "ctrl": "\u0000\u001f",
-  "hex": "Aä",
-  "html": "<a href='x'>&amp;</a>",
-  "pair": "😀",
-  "quote": "a\"b\\c/d",
-  "raw": "ä€😀",
-  "short": "\b\f\n\r\t"
-}

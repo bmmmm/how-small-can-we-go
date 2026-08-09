@@ -34,7 +34,7 @@ type Result struct {
 	Task     string       `json:"task"`
 	Language string       `json:"language"`
 	Authors  []string     `json:"authors,omitempty"`
-	Measure  Measure      `json:"measure"`
+	Score    Score        `json:"score"`
 	Cases    []CaseResult `json:"cases,omitempty"`
 	Pass     bool         `json:"pass"`
 	Infra    bool         `json:"infra,omitempty"` // some failure was infrastructure, not the entry
@@ -44,13 +44,6 @@ type Result struct {
 const (
 	buildTimeout = 2 * time.Minute
 	caseTimeout  = 20 * time.Second
-
-	// Shipped-volume caps relative to the priced surface. Generous for
-	// honest entries (current champions sit well under half of these),
-	// tight enough that whitespace and comments cannot become a bulk
-	// data channel.
-	normBytesFactor, normBytesFloor = 4, 512
-	rawBytesFactor, rawBytesFloor   = 16, 1024
 )
 
 // ErrInfra marks failures of the harness or sandbox itself — docker
@@ -62,7 +55,7 @@ const (
 // a program that outruns the cap is a verdict on the entry.
 var ErrInfra = errors.New("infrastructure failure")
 
-// CheckEntry validates one entry: manifest, measurement, offline build,
+// CheckEntry validates one entry: manifest, trust score, offline build,
 // and every test case of its task.
 func CheckEntry(entryDir string, opts Options) Result {
 	res := Result{Entry: filepath.ToSlash(filepath.Clean(entryDir))}
@@ -75,6 +68,13 @@ func CheckEntry(entryDir string, opts Options) Result {
 		return fail("%v", err)
 	}
 	res.Task, res.Language, res.Authors = man.Task, man.Language, man.Authors
+	// The niche IS the directory: an entries/<task>/ dir whose manifest
+	// names a different task would sit on one niche while playing
+	// another's cases.
+	abs, _ := filepath.Abs(entryDir)
+	if filepath.Base(filepath.Dir(abs)) == "entries" && filepath.Base(abs) != man.Task {
+		return fail("directory %s but manifest says task %q — the directory name is the niche, they must match", filepath.Base(abs), man.Task)
+	}
 	langs, err := LoadLanguages(opts.RepoRoot)
 	if err != nil {
 		return fail("%v", err)
@@ -88,21 +88,9 @@ func CheckEntry(entryDir string, opts Options) Result {
 	if err != nil || len(caseNames) == 0 {
 		return fail("task %q has no test cases under %s", man.Task, casesDir)
 	}
-	res.Measure, err = MeasureDir(entryDir, lang.Syntax)
+	res.Score, err = ScoreDir(entryDir, lang)
 	if err != nil {
 		return fail("%v", err)
-	}
-	// Free bytes (whitespace, comments) are free because they provably
-	// do not run — but they still ship, so their volume is capped
-	// relative to the priced surface. Without this, the free channels
-	// could carry unbounded data for an entry to read back at runtime.
-	if lim := normBytesFactor*res.Measure.Surface + normBytesFloor; res.Measure.NormBytes > lim {
-		return fail("normalized entry is %d bytes but only %d audit units — free bytes may not dominate what ships (max %d = %d×units+%d)",
-			res.Measure.NormBytes, res.Measure.Surface, lim, normBytesFactor, normBytesFloor)
-	}
-	if lim := rawBytesFactor*res.Measure.Surface + rawBytesFloor; res.Measure.RawBytes > lim {
-		return fail("entry is %d bytes as committed but only %d audit units — comments and whitespace may not dominate the repo (max %d = %d×units+%d)",
-			res.Measure.RawBytes, res.Measure.Surface, lim, rawBytesFactor, rawBytesFloor)
 	}
 
 	buildDir, err := os.MkdirTemp("", "arena-build-*")
@@ -110,10 +98,12 @@ func CheckEntry(entryDir string, opts Options) Result {
 		return fail("%v", err)
 	}
 	defer os.RemoveAll(buildDir)
-	// The normalized form is what builds and runs — you play what you
-	// weigh. Anything measured as free (comments, collapsed whitespace)
-	// is physically absent from the executed artifact.
-	if err := NormalizeTree(entryDir, buildDir, lang.Syntax); err != nil {
+	// Entries run as committed. entry.json is arena metadata, not part
+	// of the program, so it stays out of the working directory.
+	if err := copyTree(entryDir, buildDir); err != nil {
+		return fail("%v", err)
+	}
+	if err := os.Remove(filepath.Join(buildDir, "entry.json")); err != nil {
 		return fail("%v", err)
 	}
 	if man.Build != "" {

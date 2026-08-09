@@ -2,8 +2,8 @@
 
 // arena is the measurement and conformance harness for how-small-can-we-go:
 // it checks entries against their task's test cases and measures their
-// audit surface in audit units (comments free, identifiers flat, data
-// per byte — see SPEC.md).
+// trust score — third-party bytes first, hazardous constructs second
+// (see SPEC.md).
 package main
 
 import (
@@ -21,15 +21,16 @@ const usage = `arena — measurement and conformance harness
 
 Usage:
   arena check [--no-sandbox] [--json] <entry-dir>...
-  arena surface <dir>
+  arena score <entry-dir>
   arena board [--no-sandbox] [--out <dir>]
   arena version
 
 check    Build an entry, run its task's test cases, print the verdict.
          By default build and cases run in a no-network container (needs
          docker); --no-sandbox executes on the host for local iteration.
-surface  Print the audit surface (in audit units) of an entry directory.
-         Files priced at plain bytes are noted on stderr.
+score    Print the trust score of an entry: "<third-party bytes>
+         <hazards>". Every hazard hit and every raw-scanned file is
+         named on stderr.
 board    Re-check every entry and write board.json + index.html.
 
 Exit codes: 0 pass · 1 fail · 2 usage · 3 infrastructure failure
@@ -47,8 +48,8 @@ func main() {
 	switch os.Args[1] {
 	case "check":
 		err = cmdCheck(os.Args[2:])
-	case "surface":
-		err = cmdSurface(os.Args[2:])
+	case "score":
+		err = cmdScore(os.Args[2:])
 	case "board":
 		err = cmdBoard(os.Args[2:])
 	case "version":

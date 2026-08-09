@@ -13,35 +13,33 @@
   th { font-weight: 600; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .fail { color: light-dark(#b00020, #ff6b6b); font-weight: 600; }
-  .champ { font-weight: 700; }
+  .zero { font-weight: 700; }
   .sub, footer { opacity: 0.65; font-size: 0.85rem; }
-  .open { margin: -1.5rem 0 2rem; }
   footer { margin-top: 2rem; }
 </style>
 </head>
 <body>
 <h1>how small can we go?</h1>
-<p class="sub">The attack-surface golf arena. Surface = audit units of everything an
-entry ships: comments free, identifiers flat, data per byte. Every number was
-measured in a no-network sandbox — never claimed.
+<p class="sub">The trust-golf arena. One topic, one champion — the entry that asks
+you to trust the least: third-party bytes first, hazardous constructs second,
+in any allowed language. Every number was measured in a no-network sandbox —
+never claimed.
 <a href="https://github.com/{{.Repo}}#the-game-in-60-seconds">How to play →</a></p>
-{{range .Tasks}}
-<h2>{{.Name}}</h2>
 <table>
-<tr><th>language</th><th class="num">surface (units)</th><th class="num">lines</th><th>status</th><th>entry</th><th>authors</th></tr>
+<tr><th>topic</th><th>language</th><th class="num">third-party bytes</th><th class="num">hazards</th><th>status</th><th>entry</th><th>authors</th></tr>
 {{range .Rows}}
 <tr>
-<td>{{.Language}}{{if .Champion}} 🏆{{end}}</td>
-<td class="num{{if .Champion}} champ{{end}}">{{.Measure.Surface}}</td>
-<td class="num">{{.Measure.Lines}}</td>
+<td>{{.Task}}</td>
+<td>{{.Language}}</td>
+<td class="num{{if eq .Score.VendoredBytes 0}} zero{{end}}">{{.Score.VendoredBytes}}</td>
+<td class="num{{if eq .Score.HazardCount 0}} zero{{end}}">{{.Score.HazardCount}}</td>
 <td>{{if .Err}}<span class="fail">error</span>{{else if .Pass}}pass{{else}}<span class="fail">failing</span>{{end}}</td>
 <td><a href="https://github.com/{{$.Repo}}/tree/main/{{.Entry}}">{{.Entry}}</a></td>
 <td>{{join .Authors ", "}}</td>
 </tr>
 {{end}}
 </table>
-{{if .Open}}<p class="sub open">open niches: {{join .Open ", "}} — the first passing entry takes one, no champion to beat.</p>{{end}}
-{{end}}
+{{if .Open}}<p class="sub">open niches: {{join .Open ", "}} — the first passing entry takes one, no champion to beat.</p>{{end}}
 <footer>commit {{.Commit}} ·
 <a href="https://github.com/{{.Repo}}/blob/main/SPEC.md">rules</a> ·
 <a href="https://github.com/{{.Repo}}/blob/main/AGENTS.md">for agents</a> ·

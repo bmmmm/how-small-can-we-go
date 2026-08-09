@@ -3,13 +3,13 @@
 package arena
 
 import (
-	"strings"
+	"path/filepath"
 	"testing"
 )
 
-// The repo's real languages.json is the deployed measurement config — a
-// pattern that silently stops matching would open a pricing hole no
-// hand-written test double could catch. Exercise every language's
+// The repo's real languages.json is the deployed scoring config — a
+// hazard pattern that silently stops matching would open a scoring hole
+// no hand-written test double could catch. Exercise every language's
 // triggers against the committed file.
 func repoLanguages(t *testing.T) map[string]Language {
 	t.Helper()
@@ -20,80 +20,106 @@ func repoLanguages(t *testing.T) map[string]Language {
 	return langs
 }
 
-func TestRepoConfigCompilesAndHasExtensions(t *testing.T) {
-	for name, lang := range repoLanguages(t) {
-		if name == "sh" {
-			if lang.Syntax != nil {
-				t.Errorf("sh grew a syntax config — heredocs defeat safe comment detection, review deliberately")
-			}
+func TestRepoConfigShape(t *testing.T) {
+	langs := repoLanguages(t)
+	for _, name := range []string{"bash", "c", "go", "python", "rust"} {
+		lang, ok := langs[name]
+		if !ok {
+			t.Errorf("language %q missing from languages.json", name)
 			continue
 		}
-		if lang.Syntax == nil {
-			t.Errorf("language %q has no syntax config", name)
+		if len(lang.Hazards) == 0 {
+			t.Errorf("language %q has no hazard list — the second score dimension would be dead", name)
+		}
+	}
+	if langs["bash"].Strip != nil {
+		t.Error("bash grew a strip config — heredocs defeat safe comment detection, review deliberately")
+	}
+	for _, name := range []string{"c", "go", "python", "rust"} {
+		if langs[name].Strip == nil {
+			t.Errorf("language %q has no strip config — comments would cost hazards", name)
 		}
 	}
 }
 
-func TestRepoConfigTriggers(t *testing.T) {
+// Hazard triggers against the real config: dangerous constructs count,
+// comments about them do not (except in raw-scanned bash — documented
+// as fail-suspicious).
+func TestRepoConfigHazardTriggers(t *testing.T) {
 	langs := repoLanguages(t)
 	cases := []struct {
-		lang string
-		src  string
-		want string // substring of the expected note; "" = discounts must apply
+		lang, file, src string
+		want            int
 	}{
-		{"go", "import \"reflect\"\n", "no-discount"},
-		{"go", "import \"runtime\"\n", "no-discount"},
-		{"go", "fmt.Printf(\"%+v\", x)\n", "no-discount"},
-		{"go", "x := 1 // fine\n", ""},
-		{"python", "print(globals())\n", "no-discount"},
-		{"python", "x = y.__dict__\n", "no-discount"},
-		{"python", "import inspect\n", "no-discount"},
-		{"python", "x = 1  # fine\n", ""},
-		{"c", "#define S(x) #x\n", "no-discount"},
-		{"c", "puts(__func__);\n", "no-discount"},
-		{"c", "int x = 1; // fine\n", ""},
-		{"rust", "let s = r#\"x\"#;\n", "no-discount"},
-		{"rust", "stringify!(abc)\n", "no-discount"},
-		{"rust", "#[derive(Debug)]\nstruct S { field_name: u8 }\n", "no-discount"},
-		{"rust", "let x = 1; // fine\n", ""},
+		{"go", "m.go", "package m\nvar p = unsafe.Pointer(nil)\n", 1},
+		{"go", "m.go", "package m\nimport \"os/exec\"\n", 1},
+		{"go", "m.go", "package m\nimport \"reflect\"\nvar t = reflect.TypeOf(1)\n", 1},
+		{"go", "m.go", "package m\n//go:linkname x runtime.y\n", 1},
+		{"go", "m.go", "package m\n// unsafe.Pointer and reflect.TypeOf, discussed only\n", 0},
+		{"go", "m.go", "package m\nvar x = 1\n", 0},
+		{"python", "m.py", "eval(input())\n", 1},
+		{"python", "m.py", "import subprocess\n", 1},
+		{"python", "m.py", "x = getattr(o, name)\n", 1},
+		{"python", "m.py", "# eval() is what we avoid\nx = 1\n", 0},
+		{"python", "m.py", "print(\"hello\")\n", 0},
+		{"rust", "m.rs", "fn main() { unsafe { std::ptr::null::<u8>(); } }\n", 1},
+		{"rust", "m.rs", "use std::process::Command;\n", 1},
+		{"rust", "m.rs", "// unsafe is not used here\nfn main() {}\n", 0},
+		{"c", "m.c", "int main(void) { system(\"ls\"); }\n", 1},
+		{"c", "m.c", "char b[9]; int main(void) { strcpy(b, \"x\"); }\n", 1},
+		{"c", "m.c", "#define GLUE(a, b) a##b\n", 1},
+		{"c", "m.c", "/* system() would be wrong here */\nint main(void) { return 0; }\n", 0},
+		{"bash", "m.sh", "eval \"$cmd\"\n", 1},
+		// bash scans raw: even a comment mention counts — documented
+		// price of a language without provable comment stripping.
+		{"bash", "m.sh", "# eval is avoided\necho ok\n", 1},
+		{"bash", "m.sh", "echo \"${!ref}\"\n", 1},
+		{"bash", "m.sh", "echo plain\n", 0},
 	}
 	for _, c := range cases {
-		syn := langs[c.lang].Syntax
-		if syn == nil {
-			t.Fatalf("%s: no syntax", c.lang)
+		lang := langs[c.lang]
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, c.file), c.src)
+		sc, err := ScoreDir(dir, lang)
+		if err != nil {
+			t.Errorf("%s: %q: %v", c.lang, c.src, err)
+			continue
 		}
-		r := measureFile([]byte(c.src), syn)
-		if c.want == "" && r.note != "" {
-			t.Errorf("%s: %q unexpectedly lost discounts: %s", c.lang, c.src, r.note)
-		}
-		if c.want != "" && !strings.Contains(r.note, c.want) {
-			t.Errorf("%s: %q not flagged (note %q)", c.lang, c.src, r.note)
+		if sc.HazardCount != c.want {
+			t.Errorf("%s: %q counted %d hazards, want %d (%+v)", c.lang, c.src, sc.HazardCount, c.want, sc.Hazards)
 		}
 	}
 }
 
-// The __main__ guard and __init__ are idiomatic Python, not reflection
-// doors — they must keep their discounts against the real config.
-func TestRepoConfigPythonExemptions(t *testing.T) {
-	syn := repoLanguages(t)["python"].Syntax
-	src := "class A:\n    def __init__(self):\n        pass\nif __name__ == \"__main__\":\n    A()\n"
-	if r := measureFile([]byte(src), syn); r.note != "" {
-		t.Errorf("idiomatic dunders lost the discounts: %s", r.note)
+// Rust raw strings desync the scanner, so such files scan raw — a
+// comment mention then counts (fail-suspicious), never hides.
+func TestRepoConfigRustRawStringGuard(t *testing.T) {
+	lang := repoLanguages(t)["rust"]
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "m.rs"), "let s = r#\"x\"#; // unsafe mentioned\n")
+	sc, err := ScoreDir(dir, lang)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// The doors themselves must stay shut even next to an exempt idiom.
-	src += "print(A().__dict__)\n"
-	if r := measureFile([]byte(src), syn); r.note == "" {
-		t.Error("__dict__ slipped past the exemptions")
+	if len(sc.Notes) == 0 {
+		t.Fatal("raw string file was not guard-flagged")
+	}
+	if sc.HazardCount != 1 {
+		t.Errorf("raw-scanned file must count the comment mention: %+v", sc)
 	}
 }
 
-func TestRepoConfigFStringLineTrigger(t *testing.T) {
-	syn := repoLanguages(t)["python"].Syntax
-	r := measureFile([]byte("x = 1\ny = f\"{x}\"\n"), syn)
-	if r.note != "" {
-		t.Fatalf("f-string must trigger per line, not per file: %s", r.note)
+// Python f-string lines are guarded per line, not per file: the rest of
+// the file still strips normally.
+func TestRepoConfigPythonFStringGuardIsPerLine(t *testing.T) {
+	lang := repoLanguages(t)["python"]
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "m.py"), "y = f\"{x}\"\n# eval() discussed in a comment\n")
+	sc, err := ScoreDir(dir, lang)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(string(r.norm), "f\"{x}\"") {
-		t.Errorf("f-string line must ship verbatim, norm = %q", r.norm)
+	if sc.HazardCount != 0 {
+		t.Errorf("comment on an unguarded line was counted: %+v", sc.Hazards)
 	}
 }

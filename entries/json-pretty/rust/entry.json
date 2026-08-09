@@ -1,7 +1,0 @@
-{
-  "task": "json-pretty",
-  "language": "rust",
-  "authors": ["bmmmm"],
-  "build": "rustc -O --edition 2021 main.rs -o main",
-  "run": "./main"
-}

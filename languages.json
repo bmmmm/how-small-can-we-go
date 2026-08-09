@@ -1,21 +1,43 @@
 {
+  "bash": {
+    "image": "bash:5.2",
+    "extensions": [".sh", ".bash"],
+    "hazards": [
+      { "pattern": "\\beval\\b", "why": "evaluates data as code" },
+      { "pattern": "\\$\\{!", "why": "indirect expansion reads a variable chosen at runtime" }
+    ]
+  },
   "c": {
     "image": "gcc:14",
-    "syntax": {
-      "extensions": [".c", ".h"],
+    "extensions": [".c", ".h"],
+    "strip": {
       "lineComments": ["//"],
       "blockComments": [["/*", "*/"]],
       "strings": [
         { "open": "\"", "close": "\"", "escape": "\\" },
         { "open": "'", "close": "'", "escape": "\\" }
       ],
-      "noDiscountFile": ["\\?\\?/", "#\\s*define.*#", "__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"]
-    }
+      "guardFile": ["\\?\\?/"]
+    },
+    "hazards": [
+      { "pattern": "\\bsystem\\s*\\(", "why": "runs a shell command" },
+      { "pattern": "\\bpopen\\s*\\(", "why": "runs a shell command with a pipe" },
+      { "pattern": "\\bexec[lv][pe]*\\s*\\(", "why": "replaces the process image" },
+      { "pattern": "\\bfork\\s*\\(", "why": "spawns processes" },
+      { "pattern": "\\bdlopen\\b", "why": "loads native code at runtime" },
+      { "pattern": "\\bgets\\s*\\(", "why": "unbounded read into a buffer — removed from C11 for a reason" },
+      { "pattern": "\\bstrcpy\\s*\\(", "why": "unbounded write — classic overflow primitive" },
+      { "pattern": "\\bstrcat\\s*\\(", "why": "unbounded write — classic overflow primitive" },
+      { "pattern": "\\bsprintf\\s*\\(", "why": "unbounded write — classic overflow primitive" },
+      { "pattern": "\\bvsprintf\\s*\\(", "why": "unbounded write — classic overflow primitive" },
+      { "pattern": "\\basm\\b|__asm__", "why": "inline assembly bypasses the compiler entirely" },
+      { "pattern": "##", "why": "token pasting assembles identifiers the reader never sees" }
+    ]
   },
   "go": {
     "image": "golang:1.26-alpine",
-    "syntax": {
-      "extensions": [".go"],
+    "extensions": [".go"],
+    "strip": {
       "lineComments": ["//"],
       "blockComments": [["/*", "*/"]],
       "strings": [
@@ -23,15 +45,23 @@
         { "open": "`", "close": "`", "multiline": true },
         { "open": "'", "close": "'", "escape": "\\" }
       ],
-      "blockCommentIsNewline": true,
-      "noDiscountFile": ["\\breflect\\b", "\\bruntime\\b", "%[+#]v"],
       "keepComments": ["^//go:", "^//line ", "^//export "]
-    }
+    },
+    "hazards": [
+      { "pattern": "\\bunsafe\\.", "why": "defeats the memory model; every use is a manual proof obligation" },
+      { "pattern": "\\breflect\\.", "why": "reads and writes types at runtime — control flow the reader cannot follow statically" },
+      { "pattern": "os/exec", "why": "spawns processes" },
+      { "pattern": "\\bStartProcess\\b", "why": "spawns processes below os/exec" },
+      { "pattern": "\\bsyscall\\b", "why": "raw kernel interface bypasses the runtime's safety layer" },
+      { "pattern": "import \"C\"", "why": "cgo crosses into unmanaged native code" },
+      { "pattern": "//go:linkname", "why": "links to private symbols of other packages — invisible coupling" },
+      { "pattern": "\\bplugin\\.Open\\b", "why": "loads native code at runtime" }
+    ]
   },
   "python": {
     "image": "python:3.13-alpine",
-    "syntax": {
-      "extensions": [".py"],
+    "extensions": [".py"],
+    "strip": {
       "lineComments": ["#"],
       "strings": [
         { "open": "\"\"\"", "close": "\"\"\"", "escape": "\\", "multiline": true },
@@ -39,30 +69,36 @@
         { "open": "\"", "close": "\"", "escape": "\\" },
         { "open": "'", "close": "'", "escape": "\\" }
       ],
-      "wsSensitive": true,
-      "noDiscountFile": [
-        "__",
-        "\\b(globals|locals|vars|dir|eval|exec|getattr|setattr|delattr|compile|breakpoint|help)\\s*\\(",
-        "\\b(inspect|ctypes|pickle|marshal)\\b",
-        "[fF][rRbB]?[\"']{3}",
-        "[rRbB][fF][\"']{3}"
-      ],
-      "noDiscountFileExempt": ["if __name__ == \"__main__\":", "if __name__ == '__main__':", "__init__"],
-      "noDiscountLine": ["[fF][rRbB]?[\"']", "[rRbB][fF][\"']"],
+      "guardLine": ["[fF][rRbB]?[\"']", "[rRbB][fF][\"']"],
       "keepComments": ["^#!", "coding[:=]"]
-    }
+    },
+    "hazards": [
+      { "pattern": "\\beval\\s*\\(", "why": "evaluates data as code" },
+      { "pattern": "\\bexec\\s*\\(", "why": "evaluates data as code" },
+      { "pattern": "\\bcompile\\s*\\(", "why": "compiles data to code objects" },
+      { "pattern": "__import__|\\bimportlib\\b", "why": "imports chosen at runtime — the dependency graph stops being static" },
+      { "pattern": "\\b(get|set|del)attr\\s*\\(", "why": "attribute access by computed name — reflection" },
+      { "pattern": "\\bglobals\\s*\\(|\\blocals\\s*\\(|\\bvars\\s*\\(", "why": "namespace reflection" },
+      { "pattern": "\\bctypes\\b", "why": "FFI into unmanaged native code" },
+      { "pattern": "\\bpickle\\b|\\bmarshal\\b", "why": "deserialization that executes arbitrary code" },
+      { "pattern": "\\bsubprocess\\b|os\\.system|os\\.popen|os\\.exec|os\\.spawn", "why": "spawns processes" }
+    ]
   },
   "rust": {
     "image": "rust:1.83-alpine",
-    "syntax": {
-      "extensions": [".rs"],
+    "extensions": [".rs"],
+    "strip": {
       "lineComments": ["//"],
       "blockComments": [["/*", "*/"]],
       "strings": [
         { "open": "\"", "close": "\"", "escape": "\\", "multiline": true }
       ],
-      "noDiscountFile": ["'\"", "\\br#*\"", "\\bbr", "stringify!", "macro_rules!", "type_name", "derive\\s*\\(\\s*Debug"]
-    }
-  },
-  "sh": { "image": "alpine:3.21" }
+      "guardFile": ["'\"", "\\bb?r#*\""]
+    },
+    "hazards": [
+      { "pattern": "\\bunsafe\\b", "why": "leaves the borrow checker's guarantees; every block is a manual proof obligation" },
+      { "pattern": "std::process", "why": "spawns processes" },
+      { "pattern": "extern\\s*\"C\"", "why": "FFI into unmanaged native code" }
+    ]
+  }
 }

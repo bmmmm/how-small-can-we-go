@@ -63,9 +63,12 @@ func printResult(r arena.Result) {
 		fmt.Printf("   %s  %s\n", failLabel(r.Infra), r.Err)
 		return
 	}
-	fmt.Printf("   surface: %d units   (%d non-ws bytes, %d lines, %d files)\n", r.Measure.Surface, r.Measure.Bytes, r.Measure.Lines, r.Measure.Files)
-	for _, n := range r.Measure.Notes {
+	fmt.Printf("   trust score: %d third-party bytes, %d hazards   (%d files)\n", r.Score.VendoredBytes, r.Score.HazardCount, r.Score.Files)
+	for _, n := range r.Score.Notes {
 		fmt.Printf("   NOTE  %s\n", n)
+	}
+	for _, h := range r.Score.Hazards {
+		fmt.Printf("   HAZARD  %s:%d %s — %s\n", h.File, h.Line, h.Pattern, h.Why)
 	}
 	for _, c := range r.Cases {
 		if c.Pass {

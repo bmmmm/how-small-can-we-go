@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/bmmmm/how-small-can-we-go/tool/internal/arena"
 )
@@ -39,20 +38,15 @@ func cmdBoard(args []string) error {
 		}
 		results = append(results, res)
 	}
-	langMap, err := arena.LoadLanguages(root)
+	tasks, err := arena.DiscoverTasks(root)
 	if err != nil {
 		return err
 	}
-	langs := make([]string, 0, len(langMap))
-	for l := range langMap {
-		langs = append(langs, l)
-	}
-	sort.Strings(langs)
 	commit := os.Getenv("GITHUB_SHA")
 	if commit == "" {
 		commit = "local"
 	}
-	if err := arena.WriteBoard(results, *out, commit, langs); err != nil {
+	if err := arena.WriteBoard(results, *out, commit, tasks); err != nil {
 		return err
 	}
 	fmt.Printf("board written to %s (%d entries)\n", *out, len(results))
