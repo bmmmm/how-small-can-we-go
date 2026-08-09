@@ -36,7 +36,9 @@ func WriteBoard(results []Result, outDir, commit string, tasks []string) error {
 	for _, r := range rows {
 		taken[r.Task] = true
 	}
-	data := boardData{Commit: commit, Repo: repo, Rows: rows}
+	// Open stays a JSON array even when empty — agents read board.json
+	// as ground truth and index into .open without null checks.
+	data := boardData{Commit: commit, Repo: repo, Rows: rows, Open: []string{}}
 	for _, t := range tasks {
 		if !taken[t] {
 			data.Open = append(data.Open, t)
