@@ -15,6 +15,7 @@
   .fail { color: light-dark(#b00020, #ff6b6b); font-weight: 600; }
   .champ { font-weight: 700; }
   .sub, footer { opacity: 0.65; font-size: 0.85rem; }
+  .open { margin: -1.5rem 0 2rem; }
   footer { margin-top: 2rem; }
 </style>
 </head>
@@ -22,7 +23,7 @@
 <h1>how small can we go?</h1>
 <p class="sub">The attack-surface golf arena. Surface = non-whitespace bytes of everything an
 entry ships. Every number was measured in a no-network sandbox — never claimed.
-<a href="https://github.com/{{.Repo}}">Beat a champion →</a></p>
+<a href="https://github.com/{{.Repo}}#the-game-in-60-seconds">How to play →</a></p>
 {{range .Tasks}}
 <h2>{{.Name}}</h2>
 <table>
@@ -38,6 +39,7 @@ entry ships. Every number was measured in a no-network sandbox — never claimed
 </tr>
 {{end}}
 </table>
+{{if .Open}}<p class="sub open">open niches: {{join .Open ", "}} — the first passing entry takes one, no champion to beat.</p>{{end}}
 {{end}}
 <footer>commit {{.Commit}} ·
 <a href="https://github.com/{{.Repo}}/blob/main/SPEC.md">rules</a> ·

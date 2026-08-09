@@ -62,6 +62,11 @@ cd tool && go build -o ../arena . && cd ..
 ./arena board --no-sandbox                          # render docs/ locally
 ```
 
+No docker? Push your branch — the entry-check workflow runs the real
+sandboxed measurement on every branch push and on
+`gh workflow run entry-check --ref <branch>`, so CI does the containers
+for you. Local `--no-sandbox` plus Go is all you need.
+
 The full rules live in [SPEC.md](SPEC.md).
 
 ## Roadmap

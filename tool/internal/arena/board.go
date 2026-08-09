@@ -24,6 +24,7 @@ type boardRow struct {
 type boardTask struct {
 	Name string
 	Rows []boardRow
+	Open []string // languages from languages.json with no entry yet
 }
 
 type boardData struct {
@@ -33,7 +34,9 @@ type boardData struct {
 }
 
 // WriteBoard renders board.json and index.html for the given results.
-func WriteBoard(results []Result, outDir, commit string) error {
+// langs is the sorted list of playable languages; niches without an
+// entry are shown as open so visitors see the cheapest way in.
+func WriteBoard(results []Result, outDir, commit string, langs []string) error {
 	repo := os.Getenv("GITHUB_REPOSITORY")
 	if repo == "" {
 		repo = "bmmmm/how-small-can-we-go"
@@ -59,8 +62,15 @@ func WriteBoard(results []Result, outDir, commit string) error {
 			return rs[i].Entry < rs[j].Entry
 		})
 		t := boardTask{Name: name}
+		taken := map[string]bool{}
 		for i, r := range rs {
 			t.Rows = append(t.Rows, boardRow{Result: r, Champion: i == 0 && r.Pass})
+			taken[r.Language] = true
+		}
+		for _, l := range langs {
+			if !taken[l] {
+				t.Open = append(t.Open, l)
+			}
 		}
 		data.Tasks = append(data.Tasks, t)
 	}
