@@ -27,8 +27,9 @@ squash-merges. A container escape in job 1 only ever sees a read token.
 
 ## 2. Housekeeping
 
-- Announce: after the seed entries land (python/sh/c/rust — seeding in
-  progress 2026-08-09).
+- Announce: ready — 14 entries across 5 languages landed 2026-08-09
+  (json-pretty/sh stays a documented open niche: busybox awk cannot
+  meet the spec). Where and how to announce is a human call.
 - `languages.json` image bumps stay manual and deliberate; consider a
   quarterly reminder.
 

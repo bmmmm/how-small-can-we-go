@@ -30,6 +30,13 @@ README.md; binding rules live in SPEC.md.
    With docker available, drop `--no-sandbox` to reproduce CI exactly
    (no network, pinned image). If your entry only works with
    `--no-sandbox`, it depends on something you didn't ship — fix that.
+
+   macOS notes: Colima/Docker Desktop only share `$HOME` into the VM,
+   but arena's temp build dirs default to `$TMPDIR` — sandboxed checks
+   then fail with a misleading "can't open <file>" from an empty bind
+   mount. Run `TMPDIR=$HOME/.cache/arena-tmp ./arena check …` to fix.
+   On arm64 hosts a Go entry's compile can OOM at the 256 MB cap and
+   report "signal: killed" — retry, and treat amd64 CI as the referee.
 4. PR title: `entry: <task>/<language> — surface <n>`. PR body: the
    `arena check` output you measured. Claimed numbers are decoration;
    CI re-measures everything.
