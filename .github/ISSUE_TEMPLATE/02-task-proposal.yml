@@ -1,0 +1,119 @@
+name: Task proposal
+description: Propose a new task for the arena — before writing spec.md, cases, and a reference entry
+title: "[task] "
+labels: ["task-proposal", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue doesn't ship a task — that still takes a PR with
+        `spec.md`, at least 4 cases (one a failure mode), and one passing
+        reference entry, all together (SPEC.md → "New tasks"). File this
+        first if you want a sanity check on the idea, especially the two
+        gates below, before doing that work.
+
+  - type: input
+    id: name
+    attributes:
+      label: Task name
+      description: >-
+        Directory name under `tasks/`, kebab-case, specific about the
+        format (e.g. `sha256-file`, not `hashing`).
+      placeholder: base64-file
+    validations:
+      required: true
+
+  - type: textarea
+    id: contract
+    attributes:
+      label: What it does
+      description: >-
+        The contract, spec.md-opening precise: inputs (argv/stdin/files),
+        what goes to stdout, exit codes on success and on each failure
+        mode.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this task
+      description: >-
+        What does it exercise that the existing tasks don't? What's the
+        golfing tension — what's tempting to cheat on, and what should the
+        cases pin down to stop that?
+    validations:
+      required: true
+
+  - type: input
+    id: tool
+    attributes:
+      label: Tool that generates expected outputs
+      description: >-
+        Real tool + version (SPEC.md requires this named in spec.md, e.g.
+        "shasum -a 256, macOS 15 / Perl 5.34").
+      placeholder: "coreutils base64, GNU coreutils 9.x"
+    validations:
+      required: true
+
+  - type: textarea
+    id: cases
+    attributes:
+      label: Case sketch
+      description: >-
+        At least 4 cases, one of them a failure mode (SPEC.md minimum). A
+        short table is fine: case name → what it pins down.
+      placeholder: |
+        | case       | what it pins down                        |
+        | ---------- | ----------------------------------------- |
+        | empty      | zero-byte input                            |
+        | ...        | ...                                         |
+        | bad-input  | failure mode → empty stdout, nonzero exit  |
+    validations:
+      required: true
+
+  - type: dropdown
+    id: fits-runner
+    attributes:
+      label: Does it fit the current case model?
+      description: >-
+        Cases are argv-in / stdout-out, compared byte-exact, run with
+        `--network none` (SPEC.md → Conformance). No servers, no
+        long-running processes, no network — that needs a new case model
+        first (TODO.md notes this explicitly for server-style tasks).
+      options:
+        - "Not sure — haven't checked"
+        - "Yes — argv/files in, stdout out, no network, no server"
+        - "No — it needs something the runner doesn't support yet"
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deterministic
+    attributes:
+      label: Is the expected output byte-exact deterministic?
+      description: >-
+        No timestamps, locale, floating-point formatting, or hash-map
+        iteration order in stdout — it has to match byte-for-byte on any
+        machine, since stdout is compared byte-exact (SPEC.md).
+      options:
+        - "Not sure — haven't verified"
+        - "Yes — verified deterministic across at least two runs/machines"
+        - "No — there's some non-determinism I haven't resolved"
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: implement
+    attributes:
+      label: Would you write the reference entry?
+      description: SPEC.md requires one passing entry as proof the spec is implementable.
+      options:
+        - "Not sure yet"
+        - "Yes"
+        - "No, proposing only"
+      default: 0
+    validations:
+      required: true

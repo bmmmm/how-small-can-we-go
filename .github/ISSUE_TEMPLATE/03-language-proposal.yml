@@ -1,0 +1,74 @@
+name: Language proposal
+description: Propose a new entry in languages.json — official image, pinned tag, works offline
+title: "[language] "
+labels: ["language-proposal", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Adding a language is eventually a PR touching only
+        `languages.json` (SPEC.md → "Languages"). Image bumps and
+        additions are deliberate maintainer decisions, not automatic —
+        file this first so the image choice gets a look before you write
+        the PR.
+
+  - type: input
+    id: key
+    attributes:
+      label: Language key
+      description: >-
+        The key to add to `languages.json`, lowercase, matching how it'd
+        appear under `entries/<task>/<language>/`.
+      placeholder: node
+    validations:
+      required: true
+
+  - type: input
+    id: image
+    attributes:
+      label: Exact image:tag
+      description: >-
+        Pinned to at least major.minor (SPEC.md requirement) — not
+        `latest`, not just a bare major version.
+      placeholder: "node:22.9-alpine"
+    validations:
+      required: true
+
+  - type: input
+    id: official-link
+    attributes:
+      label: Link to the official Docker Hub image
+      description: >-
+        The `_/<image>` official-images namespace (or a publisher Docker
+        Hub explicitly verifies) — not a random user's image.
+      placeholder: "https://hub.docker.com/_/node"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: offline-tested
+    attributes:
+      label: Offline confirmation
+      options:
+        - label: >-
+            I pulled this image and ran a trivial build+run in it with
+            `--network none` and it worked — command and output pasted
+            below.
+          required: true
+
+  - type: textarea
+    id: offline-evidence
+    attributes:
+      label: Command and output that proved it works offline
+      description: The actual command line and its output — not "it should work."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this language (optional)
+      description: >-
+        What would it exercise that existing languages (see
+        `languages.json`) don't?

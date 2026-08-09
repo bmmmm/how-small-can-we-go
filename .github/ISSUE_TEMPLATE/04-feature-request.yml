@@ -1,0 +1,78 @@
+name: Feature request
+description: Propose new behaviour for the arena tool, CI gates, or the board
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form asks you to design the feature, not just wish for it —
+        the answers below are close to what someone would need to
+        implement it without a follow-up question. Not for a new task or
+        language — those have their own forms — and not for a `spec.md`
+        change to an existing task: describe that under "The problem" and
+        it still belongs here, since SPEC.md treats changing a spec as "a
+        separate discussion in an issue."
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What are you unable to do today? Describe the situation, not your
+        solution — there may be a better way to solve it than the one you
+        have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: >-
+        The concrete surface this would add or change. If it changes
+        existing output (`board.json`, `arena` CLI output, a CI summary),
+        show the before and after.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: >-
+        Written so someone else can tell whether it's done without asking
+        you. One Given/When/Then per behaviour, including a negative case.
+    validations:
+      required: true
+
+  - type: textarea
+    id: nongoals
+    attributes:
+      label: Explicitly out of scope
+      description: >-
+        The neighbouring things this should NOT grow into. This arena's
+        existing non-goals: no network at build or run time, no non-text
+        files, no way to depend on anything but the pinned base image and
+        vendored code (SPEC.md). Say if your proposal would need any of
+        those to change — that's a bigger discussion than a feature
+        request.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and current workaround
+      description: What you do today, and why it isn't good enough.
+
+  - type: dropdown
+    id: implement
+    attributes:
+      label: Would you implement it?
+      options:
+        - "Not sure yet"
+        - "Yes, if the design is accepted"
+        - "Yes, but I'd need pointers on where to start"
+        - "No, proposing only"
+      default: 0
+    validations:
+      required: true

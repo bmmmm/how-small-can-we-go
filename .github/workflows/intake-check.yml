@@ -1,0 +1,81 @@
+# Advisory only — never fails the build, never blocks merge. Reads the PR
+# template's declared type (the "What kind of PR is this?" checkboxes) and
+# reports which paths the diff actually touches next to it, so a mismatch
+# — e.g. "Entry" checked but files outside the niche directory changed —
+# is visible before entry-check.yml's real gate or a human catches it.
+# AGENTS.md's auto-reject list already treats "touching files outside
+# your niche directory" as a hard fail; this just surfaces it earlier.
+#
+# Read-only permissions, no privileged token: this workflow only reads
+# the diff and the PR body and writes to its own job summary. It never
+# checks out and executes PR-controlled code with elevated permissions —
+# see SECURITY.md's "CI privilege escalation" entry for why that matters.
+#
+# Action majors verified 2026-08 via
+# `gh api repos/<owner>/<action>/releases/latest`.
+name: intake-check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intake-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  advise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Cross-check declared PR type against touched paths
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          body_file="$RUNNER_TEMP/pr-body.txt"
+          printf '%s\n' "$PR_BODY" > "$body_file"
+
+          declared=$(grep -oiE '\[[xX]\] \*\*(Entry|Test case|New task|Language proposal)\*\*|\[[xX]\] Tooling / docs' "$body_file" | sed -E 's/\[[xX]\] ?//; s/\*\*//g' || true)
+
+          mapfile -t changed < <(git diff --name-only "$BASE_SHA"...HEAD)
+
+          {
+            echo "## Intake check (advisory — informational only, never blocks merge)"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "$declared" ]; then
+            echo "- No PR-type checkbox detected as checked in the description." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Declared type(s): $(printf '%s' "$declared" | tr '\n' ',' | sed 's/,$//')" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "- Files touched: ${#changed[@]}" >> "$GITHUB_STEP_SUMMARY"
+
+          niches=$(printf '%s\n' "${changed[@]}" | grep '^entries/' | cut -d/ -f1-3 | sort -u || true)
+          [ -n "$niches" ] && echo "  - entries/: $(printf '%s' "$niches" | tr '\n' ' ')" >> "$GITHUB_STEP_SUMMARY"
+
+          tasks=$(printf '%s\n' "${changed[@]}" | grep '^tasks/' | cut -d/ -f1-2 | sort -u || true)
+          [ -n "$tasks" ] && echo "  - tasks/: $(printf '%s' "$tasks" | tr '\n' ' ')" >> "$GITHUB_STEP_SUMMARY"
+
+          if printf '%s\n' "${changed[@]}" | grep -qx 'languages.json'; then
+            echo "  - languages.json touched" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          other=$(printf '%s\n' "${changed[@]}" | grep -vE '^(entries/|tasks/|languages\.json$)' || true)
+          [ -n "$other" ] && echo "  - other: $(printf '%s' "$other" | tr '\n' ' ')" >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo ""
+            echo "Cross-check by hand against the declared type: an Entry or Test case PR should touch exactly one niche/case directory and nothing else (AGENTS.md auto-reject list); a Language proposal should touch only \`languages.json\` (SPEC.md → Languages); a New task PR needs \`spec.md\` + ≥4 cases + one passing entry (SPEC.md → New tasks)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit 0
