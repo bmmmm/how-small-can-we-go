@@ -1,7 +1,7 @@
 {
   "task": "semver-range-check",
   "language": "go",
-  "authors": ["bmmmm"],
+  "authors": ["claude"],
   "build": "go build -o prog main.go",
   "run": "./prog"
 }

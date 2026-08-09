@@ -2,7 +2,11 @@
 
 // semver-range-check: does <version> satisfy <range>? Implements the
 // grammar of tasks/semver-range-check/spec.md — full X.Y.Z versions,
-// comparators (= < <= > >= ^ ~), space = AND, || = OR.
+// comparators (= < <= > >= ^ ~), space = AND, || = OR. Whitespace in
+// the spec means ASCII space and tab ONLY, so comparators are split on
+// exactly those two bytes: any other separator (vertical tab, form
+// feed, a Unicode space) stays inside the token and fails the version
+// parse, as the grammar demands.
 package main
 
 import (
@@ -80,11 +84,35 @@ func (c comparator) matches(v version) bool {
 	}
 }
 
+// splitFields splits s on runs of ASCII space and tab — the only
+// whitespace the spec grants. strings.Fields would also split on \v,
+// \f, \r, and Unicode spaces, silently widening the grammar.
+func splitFields(s string) []string {
+	var fields []string
+	start := -1
+	for i := 0; i < len(s); i++ {
+		if s[i] == ' ' || s[i] == '\t' {
+			if start >= 0 {
+				fields = append(fields, s[start:i])
+				start = -1
+			}
+			continue
+		}
+		if start < 0 {
+			start = i
+		}
+	}
+	if start >= 0 {
+		fields = append(fields, s[start:])
+	}
+	return fields
+}
+
 // parseRange returns the range as OR-of-AND clauses.
 func parseRange(s string) ([][]comparator, error) {
 	var clauses [][]comparator
 	for _, part := range strings.Split(s, "||") {
-		fields := strings.Fields(part)
+		fields := splitFields(part)
 		if len(fields) == 0 {
 			return nil, fmt.Errorf("range %q: empty clause", s)
 		}
