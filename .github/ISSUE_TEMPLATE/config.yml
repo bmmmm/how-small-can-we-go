@@ -1,0 +1,8 @@
+# blank_issues_enabled: false does not remove "Blank issue" from the
+# chooser — it restricts it to maintainers only, labelled "(Maintainers
+# only)". Confirmed by rendering /issues/new/choose as the repo owner.
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/bmmmm/how-small-can-we-go/security/advisories/new
+    about: Do not open a public issue. Report privately — see SECURITY.md.

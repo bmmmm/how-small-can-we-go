@@ -1,0 +1,78 @@
+name: Spec gap report
+description: An underspecified behavior in a task's spec.md — the documented-gap mechanism a case PR can link to
+title: "[spec-gap] "
+labels: ["spec-gap", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For when a task's `spec.md` doesn't say what should happen in some
+        situation, so two implementations could both read as spec-compliant
+        and still disagree. If accepted, this issue becomes the `#<issue>`
+        a test-case PR links to (SPEC.md → "Test-case contributions").
+
+        If the spec *does* say something and you think it's wrong rather
+        than silent, that's a spec change, not a gap — SPEC.md says that's
+        "a separate discussion in an issue, not a case PR." Use
+        [Feature request](https://github.com/bmmmm/how-small-can-we-go/issues/new?template=04-feature-request.yml)
+        instead and describe it as a spec change.
+
+  - type: input
+    id: task
+    attributes:
+      label: Task
+      description: The task directory under `tasks/`, e.g. `sha256-file`.
+      placeholder: sha256-file
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Is the spec silent, or does it say something you disagree with?
+      options:
+        - "Silent — the spec doesn't address this situation at all"
+        - "It addresses it, but I think the stated behavior is wrong"
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: sentence
+    attributes:
+      label: The spec text that underdetermines behavior
+      description: >-
+        Quote the relevant sentence(s) from `tasks/<task>/spec.md`. If the
+        gap is an omission rather than an ambiguous sentence, quote the
+        nearest section and say what's missing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: conflict
+    attributes:
+      label: Two spec-compliant outputs that disagree
+      description: >-
+        Concretely: for one input, what would implementation A produce,
+        what would implementation B produce, and why does the current spec
+        text permit both? This is the evidence that it's a gap, not a
+        one-off bug in someone's entry.
+    validations:
+      required: true
+
+  - type: textarea
+    id: resolution
+    attributes:
+      label: Proposed resolution (optional)
+      description: What you think the spec should say, if you have an opinion.
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before filing
+      options:
+        - label: >-
+            I read the task's `spec.md` and the existing cases in
+            `tasks/<task>/cases/` — the cases are normative (AGENTS.md) and
+            might already pin this down.
+          required: true
