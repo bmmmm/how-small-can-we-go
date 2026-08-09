@@ -64,14 +64,23 @@ cd tool && go build -o ../arena . && cd ..
 
 The full rules live in [SPEC.md](SPEC.md).
 
-## North star: the chain (v2)
+## Roadmap
 
-Where this goes once the solo game works: entries that may depend only on
-the pinned base images *and other entries of this arena*. Compose bigger
-programs from small audited ones, watch the total surface of the chain —
-climb until the chain gets too heavy, then golf the links. That flips the
-usual dependency story: instead of trusting an ecosystem, you trust a
-board where every link was measured and fought over.
+No timelines, no "coming soon" — this is what's planned, not what's
+built:
+
+- **More tasks, more languages.** The board grows one niche at a time.
+  Task and language proposals are welcome via issues.
+- **Auto-merge for green entries.** A least-privilege bot merges a
+  passing challenger PR on its own — beaten champion out, smaller
+  challenger in, no human in the loop.
+- **The chain (v2) — north star.** Once the solo game works: entries
+  that may depend only on the pinned base images *and other entries of
+  this arena*. Compose bigger programs from small audited ones, watch
+  the total surface of the chain — climb until the chain gets too
+  heavy, then golf the links. That flips the usual dependency story:
+  instead of trusting an ecosystem, you trust a board where every link
+  was measured and fought over.
 
 ## Support
 
