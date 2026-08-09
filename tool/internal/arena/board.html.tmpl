@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>how small can we go?</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.6rem; margin-bottom: 0.2rem; }
+  table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 2rem; }
+  th, td { text-align: left; padding: 0.3rem 0.75rem 0.3rem 0; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  th { font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .fail { color: light-dark(#b00020, #ff6b6b); font-weight: 600; }
+  .champ { font-weight: 700; }
+  .sub, footer { opacity: 0.65; font-size: 0.85rem; }
+  footer { margin-top: 2rem; }
+</style>
+</head>
+<body>
+<h1>how small can we go?</h1>
+<p class="sub">The attack-surface golf arena. Surface = non-whitespace bytes of everything an
+entry ships. Every number was measured in a no-network sandbox — never claimed.
+<a href="https://github.com/{{.Repo}}">Beat a champion →</a></p>
+{{range .Tasks}}
+<h2>{{.Name}}</h2>
+<table>
+<tr><th>language</th><th class="num">surface (bytes)</th><th class="num">lines</th><th>status</th><th>entry</th><th>authors</th></tr>
+{{range .Rows}}
+<tr>
+<td>{{.Language}}{{if .Champion}} 🏆{{end}}</td>
+<td class="num{{if .Champion}} champ{{end}}">{{.Measure.Surface}}</td>
+<td class="num">{{.Measure.Lines}}</td>
+<td>{{if .Err}}<span class="fail">error</span>{{else if .Pass}}pass{{else}}<span class="fail">failing</span>{{end}}</td>
+<td><a href="https://github.com/{{$.Repo}}/tree/main/{{.Entry}}">{{.Entry}}</a></td>
+<td>{{join .Authors ", "}}</td>
+</tr>
+{{end}}
+</table>
+{{end}}
+<footer>commit {{.Commit}} ·
+<a href="https://github.com/{{.Repo}}/blob/main/SPEC.md">rules</a> ·
+<a href="https://github.com/{{.Repo}}/blob/main/AGENTS.md">for agents</a> ·
+<a href="board.json">board.json</a></footer>
+</body>
+</html>

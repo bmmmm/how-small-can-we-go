@@ -1,0 +1,30 @@
+# CI for the arena tool itself. Action majors verified 2026-08 via
+# `gh api repos/<owner>/<action>/releases/latest`.
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths: ['tool/**', '.github/workflows/ci.yml']
+  pull_request:
+    paths: ['tool/**', '.github/workflows/ci.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tool
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build .

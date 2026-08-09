@@ -1,0 +1,6 @@
+# built harness binary
+/arena
+/tool/tool
+
+# generated board (built in CI, deployed to Pages)
+/docs/

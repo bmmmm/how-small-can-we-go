@@ -1,0 +1,50 @@
+# Rebuilds the board on every push to main and weekly: every entry is
+# re-checked against the current test suites (entries broken by newer
+# cases show up as failing), then the static board deploys to Pages.
+# Action majors verified 2026-08 via
+# `gh api repos/<owner>/<action>/releases/latest`.
+name: board
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+      - name: Build arena
+        run: cd tool && go build -o "$RUNNER_TEMP/arena" .
+      - name: Build board
+        run: '"$RUNNER_TEMP/arena" board --out docs'
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

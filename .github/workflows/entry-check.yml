@@ -1,0 +1,102 @@
+# Gates entry PRs: conformance in a no-network sandbox + the challenger
+# rule (strictly smaller surface than the champion). Case PRs get an
+# informational impact run. Action majors verified 2026-08 via
+# `gh api repos/<owner>/<action>/releases/latest`.
+name: entry-check
+
+on:
+  pull_request:
+    paths:
+      - 'entries/**'
+      - 'tasks/**'
+      - 'languages.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: entry-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 'stable'
+      - name: Build arena
+        run: cd tool && go build -o "$RUNNER_TEMP/arena" .
+
+      - name: Check changed entries
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          arena="$RUNNER_TEMP/arena"
+          summary() { echo "$@" >> "$GITHUB_STEP_SUMMARY"; }
+          mapfile -t dirs < <(git diff --name-only "$BASE_SHA"...HEAD -- entries/ | cut -d/ -f1-3 | sort -u)
+          if [ "${#dirs[@]}" -eq 0 ]; then
+            summary "No entry changes."
+            exit 0
+          fi
+          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+          fail=0
+          for d in "${dirs[@]}"; do
+            summary "## $d"
+            if [ ! -d "$d" ]; then
+              summary "- ❌ entry removed — entries leave the board by being beaten, not deleted (SPEC.md, gate 3)"
+              fail=1
+              continue
+            fi
+            if "$arena" check "$d"; then
+              summary "- ✅ conformance: all cases pass"
+            else
+              summary "- ❌ conformance failed — the job log shows the failing case and why"
+              fail=1
+              continue
+            fi
+            new=$("$arena" surface "$d")
+            if [ -d "$RUNNER_TEMP/base/$d" ]; then
+              old=$(cd "$RUNNER_TEMP/base" && "$arena" surface "$d")
+              if [ "$new" -lt "$old" ]; then
+                summary "- ✅ surface: $new < $old — champion beaten"
+              elif (cd "$RUNNER_TEMP/base" && "$arena" check "$d"); then
+                summary "- ❌ surface: $new, champion: $old — a challenger must be strictly smaller (SPEC.md, gate 1)"
+                fail=1
+              else
+                summary "- ✅ surface: $new — champion was failing, the niche was open"
+              fi
+            else
+              summary "- ✅ surface: $new — new niche"
+            fi
+          done
+          exit "$fail"
+
+      - name: Case impact (informational)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          arena="$RUNNER_TEMP/arena"
+          mapfile -t tasks < <(git diff --name-only "$BASE_SHA"...HEAD -- tasks/ | cut -d/ -f1-2 | sort -u)
+          [ "${#tasks[@]}" -eq 0 ] && exit 0
+          {
+            echo "## Case impact"
+            echo "A new case is accepted when it breaks a current entry or closes a documented spec gap (SPEC.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          for t in "${tasks[@]}"; do
+            name=$(basename "$t")
+            for e in entries/"$name"/*/; do
+              [ -d "$e" ] || continue
+              e="${e%/}"
+              if "$arena" check "$e"; then
+                echo "- \`$e\`: still passing" >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "- \`$e\`: **breaks** — this case discriminates" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            done
+          done
+          exit 0

@@ -1,0 +1,14 @@
+# The `dependencies` label is referenced explicitly — create it once per
+# repo (`gh label create dependencies --color 0366d6`).
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /tool
+    schedule:
+      interval: weekly
+    labels: [dependencies]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies]

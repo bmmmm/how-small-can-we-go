@@ -1,0 +1,7 @@
+{
+  "c": { "image": "gcc:14" },
+  "go": { "image": "golang:1.26-alpine" },
+  "python": { "image": "python:3.13-alpine" },
+  "rust": { "image": "rust:1.83-alpine" },
+  "sh": { "image": "alpine:3.21" }
+}

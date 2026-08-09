@@ -1,0 +1,7 @@
+{
+  "task": "sha256-file",
+  "language": "go",
+  "authors": ["bmmmm"],
+  "build": "go build -o prog main.go",
+  "run": "./prog"
+}
