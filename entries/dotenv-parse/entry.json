@@ -1,6 +1,6 @@
 {
   "task": "dotenv-parse",
   "language": "python",
-  "authors": ["bmmmm"],
+  "authors": ["claude"],
   "run": "python3 main.py"
 }

@@ -1,11 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # dotenv-parse: read a dotenv file, print KEY=VALUE per variable.
-# Implements the dialect of tasks/dotenv-parse/spec.md — all-or-nothing:
-# nothing reaches stdout unless the whole file parses.
+# Implements the dialect of tasks/dotenv-parse/spec.md - all-or-nothing:
+# nothing reaches stdout unless the whole file parses. Whitespace in the
+# spec means ASCII space and tab ONLY, so every trim names those two
+# characters: a bare str.strip() would also eat \v, \f, \r and Unicode
+# spaces the dialect does not grant. The one CRLF artifact - a single
+# trailing \r per line - is stripped explicitly before anything else.
 import string
 import sys
 
+WS = " \t"
 KEY_START = set(string.ascii_letters + "_")
 KEY_CHARS = KEY_START | set(string.digits)
 
@@ -13,7 +18,7 @@ DOUBLE_ESCAPES = {"n": "\n", "t": "\t", '"': '"', "\\": "\\"}
 
 
 def fail(lineno, msg):
-    print(f"line {lineno}: {msg}", file=sys.stderr)
+    print("line " + str(lineno) + ": " + msg, file=sys.stderr)
     sys.exit(1)
 
 
@@ -24,8 +29,8 @@ def parse_quoted(rest, lineno):
     while i < len(rest):
         c = rest[i]
         if c == quote:
-            if rest[i + 1:].strip():
-                fail(lineno, "only whitespace may follow a closing quote")
+            if rest[i + 1:].strip(WS):
+                fail(lineno, "only space or tab may follow a closing quote")
             return "".join(out)
         if quote == '"' and c == "\\":
             i += 1
@@ -43,18 +48,20 @@ def parse_quoted(rest, lineno):
 def parse(text):
     env = {}
     for lineno, raw in enumerate(text.split("\n"), 1):
-        line = raw.strip()
+        if raw.endswith("\r"):
+            raw = raw[:-1]  # exactly one: the CRLF artifact
+        line = raw.strip(WS)
         if not line or line.startswith("#"):
             continue
         if line.startswith("export") and line[6:7] in (" ", "\t"):
-            line = line[7:].strip()
+            line = line[7:].strip(WS)
         key, eq, rest = line.partition("=")
-        key = key.strip()
+        key = key.strip(WS)
         if not eq:
             fail(lineno, "expected KEY=VALUE")
         if not key or key[0] not in KEY_START or any(c not in KEY_CHARS for c in key):
-            fail(lineno, f"invalid key {key!r}")
-        rest = rest.strip()
+            fail(lineno, "invalid key " + repr(key))
+        rest = rest.strip(WS)
         if rest[:1] in ('"', "'"):
             value = parse_quoted(rest, lineno)
         else:
@@ -76,7 +83,7 @@ def main():
         print(e, file=sys.stderr)
         sys.exit(1)
     env = parse(text)
-    sys.stdout.write("".join(f"{k}={v}\n" for k, v in env.items()))
+    sys.stdout.write("".join(k + "=" + v + "\n" for k, v in env.items()))
 
 
 main()
