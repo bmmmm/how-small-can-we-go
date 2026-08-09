@@ -24,7 +24,7 @@ body:
     id: command
     attributes:
       label: Command or steps that led here, if any
-      placeholder: "./arena check entries/sha256-file/go --no-sandbox"
+      placeholder: "./arena check entries/semver-range-check --no-sandbox"
 
   - type: textarea
     id: output

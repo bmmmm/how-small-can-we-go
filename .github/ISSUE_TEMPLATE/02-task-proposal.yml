@@ -1,6 +1,6 @@
-name: Task proposal
-description: Propose a new task for the arena — before writing spec.md, cases, and a reference entry
-title: "[task] "
+name: Topic proposal
+description: Propose a new topic for the arena — before writing spec.md, cases, and a reference entry
+title: "[topic] "
 labels: ["task-proposal", "triage"]
 body:
   - type: markdown
@@ -15,11 +15,11 @@ body:
   - type: input
     id: name
     attributes:
-      label: Task name
+      label: Topic name
       description: >-
         Directory name under `tasks/`, kebab-case, specific about the
-        format (e.g. `sha256-file`, not `hashing`).
-      placeholder: base64-file
+        format (e.g. `dotenv-parse`, not `config-stuff`).
+      placeholder: toml-subset-parse
     validations:
       required: true
 
@@ -37,22 +37,25 @@ body:
   - type: textarea
     id: why
     attributes:
-      label: Why this task
+      label: Why this topic
       description: >-
-        What does it exercise that the existing tasks don't? What's the
-        golfing tension — what's tempting to cheat on, and what should the
-        cases pin down to stop that?
+        The best topics are functions lifted from real projects where the
+        world usually imports a library. Where is the trust tension —
+        which dependency would people normally vendor for this, and is a
+        stdlib-only implementation realistically in reach? What must the
+        cases pin down so a wrong-but-passing entry can't sneak through?
     validations:
       required: true
 
   - type: input
     id: tool
     attributes:
-      label: Tool that generates expected outputs
+      label: How the expected outputs are derived
       description: >-
-        Real tool + version (SPEC.md requires this named in spec.md, e.g.
-        "shasum -a 256, macOS 15 / Perl 5.34").
-      placeholder: "coreutils base64, GNU coreutils 9.x"
+        SPEC.md requires spec.md to state this — a real tool + version, or
+        "by hand from the pinned dialect, reference entry as executable
+        cross-check".
+      placeholder: "by hand from the grammar in spec.md"
     validations:
       required: true
 

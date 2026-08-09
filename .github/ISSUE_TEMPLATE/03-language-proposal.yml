@@ -18,7 +18,7 @@ body:
       label: Language key
       description: >-
         The key to add to `languages.json`, lowercase, matching how it'd
-        appear under `entries/<task>/<language>/`.
+        appear in an entry's `"language"` field.
       placeholder: node
     validations:
       required: true
@@ -62,6 +62,18 @@ body:
       label: Command and output that proved it works offline
       description: The actual command line and its output — not "it should work."
       render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: hazards
+    attributes:
+      label: Hazard list sketch
+      description: >-
+        The language's hazard patterns with a why each (SPEC.md →
+        Languages): process execution, dynamic evaluation, reflection,
+        FFI, unsafe memory — whatever this language's doors are. The
+        list is an argument about the language, argue it.
     validations:
       required: true
 

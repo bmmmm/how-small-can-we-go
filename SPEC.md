@@ -5,31 +5,35 @@ SPEC wins.
 
 ## Vocabulary
 
-- **Task** — a precisely specified program to write, defined by
+- **Task** (topic) — a precisely specified program to write, defined by
   `tasks/<task>/spec.md` and pinned down by its test cases.
-- **Niche** — a (task, language) pair. One directory:
-  `entries/<task>/<language>/`.
+- **Niche** — one task. One directory: `entries/<task>/`. There is no
+  per-language bracket: languages do not compete with each other here,
+  entries do.
 - **Champion** — the entry currently occupying a niche. One entry per
-  niche; history lives in git.
-- **Audit surface** — what an auditor must process, counted in *audit
-  units* across all files of an entry directory, except `entry.json`.
-  Lower is better. The pricing (details under *Measurement*): comments
-  are free, an identifier costs 1 flat, literals and everything else
-  cost 1 per byte, whitespace outside literals is free.
+  task; history lives in git.
+- **Trust score** — how much unreviewed trust an entry demands, in two
+  dimensions compared lexicographically (details under *Measurement*):
+  1. **third-party bytes** — every byte under `vendor/`,
+  2. **hazards** — occurrences of the language's declared hazard
+     patterns.
+  Lower is better. `(0, 0)` — no foreign code, no hazardous
+  constructs — is the perfect score.
 
 ## Entry contract
 
 ```
-entries/<task>/<language>/
-  entry.json      # manifest, excluded from measurement
-  ...             # everything else: measured, shipped, audited
+entries/<task>/
+  entry.json      # manifest, excluded from scoring
+  ...             # your source
+  vendor/...      # all third-party code, license files included
 ```
 
 `entry.json`:
 
 ```json
 {
-  "task": "sha256-file",
+  "task": "semver-range-check",
   "language": "go",
   "authors": ["your-handle"],
   "build": "go build -o prog main.go",
@@ -37,70 +41,67 @@ entries/<task>/<language>/
 }
 ```
 
-- `task`, `language`, `run`, `authors` are required; `build` is optional.
+- `task`, `language`, `run`, `authors` are required; `build` is
+  optional. `task` must equal the directory name — the directory is the
+  niche.
+- `language` is your choice, one of the languages in `languages.json`
+  (currently: bash, c, go, python, rust). The language is part of the
+  submission, not of the niche — a Python champion can be dethroned by
+  a C entry and vice versa.
 - `build` and `run` are split on whitespace and executed **without a
   shell** — no pipes, no globs, no quoting. Test-case arguments are
   appended to `run` as separate argv entries.
 - Both run with the entry directory (after build) as working directory.
-- Vendored dependencies are allowed and count toward the surface. There
-  is no other way to depend on anything: the build has no network.
+- **All third-party code lives under `vendor/`**, with its license.
+  There is no other way to depend on anything: the build has no
+  network. Passing foreign code off as your own — pasting it outside
+  `vendor/`, or compiling it into "data" files your code interprets —
+  is misrepresentation; such entries are removed regardless of score.
 
 ## Measurement
 
-Auditors read tokens, not bytes: `digest` and `d` cost a reader the
-same, while every byte of a string literal must be checked one by one.
-The surface prices exactly that. Per file:
+The score prices trust, not size. Code length, name length, comment
+volume — none of it measures anything. What measures:
 
-| construct                        | cost in audit units                |
-| -------------------------------- | ---------------------------------- |
-| comment                          | 0                                  |
-| identifier / keyword occurrence  | 1, plus 1 per byte beyond 16       |
-| string & number literals         | 1 per byte, whitespace included    |
-| any other non-whitespace byte    | 1                                  |
-| whitespace outside literals      | 0                                  |
+1. **Third-party bytes.** The byte total of everything under a
+   `vendor/` path segment, data and license files included: a vendored
+   blob is trusted freight either way. Ideal: zero — the task solved
+   from the language and its standard library alone. The pinned
+   container image (runtime + stdlib) is the trusted base and free;
+   everything else you ship weighs.
+2. **Hazards.** Each language declares, in `languages.json`, a curated
+   list of hazard patterns with a documented `why` — constructs that
+   demand extra reviewer trust: process execution, dynamic code
+   evaluation, reflection, FFI, unsafe memory, unbounded writes. Every
+   occurrence in every source file counts, vendored source included:
+   code you ship is code that runs. `arena check` and `arena score`
+   name every hit with file, line, and reason.
 
-Renaming `digest` to `d` and stripping comments changes nothing — a
-challenger that only uglifies measures *equal*, and equal is not
-smaller (gate 1). What still shrinks the number is structure: fewer
-constructs, less data, smaller dependencies.
+A challenger beats a champion when its score is **strictly better**:
+fewer third-party bytes, or equally many and fewer hazards. Equal is
+not better — the champion defends ties; first-mover advantage is
+deliberate, churn without improvement is noise.
 
-**Discounts only on proof.** The scanner grants the two discounts
-(comments, flat identifiers) only where the language's declared syntax
-(`languages.json`) lets it prove them safe. Everything doubtful is
-priced at 1 unit per non-whitespace byte: files matching a language's
-no-discount patterns (reflection doors like Go's `reflect` or Python
-dunders, which would turn identifier names into a cheap data channel;
-constructs the scanner cannot lex, like Rust raw strings), single
-lines matching a line pattern (Python f-strings), and every file of a
-language without a syntax config (`sh` — heredocs defeat safe comment
-detection, so it ships verbatim at byte prices). A mispriced corner can
-therefore only ever cost too much, never too little. `arena check` and
-`arena surface` name every file that lost its discounts and why.
+**Comments are never hazards.** Before the hazard scan, comments are
+stripped wherever the language's declared syntax (`languages.json`)
+lets the scanner prove the strip safe. Anything doubtful is scanned
+raw, comments included: files matching a lex guard (Rust raw strings,
+C trigraphs), single lines matching a line guard (Python f-strings),
+constructs the scanner cannot lex, and every file of a language
+without a strip config (bash — heredocs defeat safe comment
+detection). A doubtful corner can therefore only ever overcount
+hazards, never hide one. The tools name every raw-scanned file and
+why. String literals are tracked but not stripped: a hazard pattern
+inside a string may count — fail-suspicious is the accepted trade.
 
-**You play what you weigh.** The measured form is the executed form:
-before building, source files have comments stripped and whitespace
-collapsed (indentation survives where it is grammar, e.g. Python;
-semantic comments like `//go:` directives and shebangs survive and are
-priced). Whatever the metric counted as free provably never runs. Two
-volume caps keep the free channels from becoming a covert data store an
-entry reads back at runtime: the normalized entry must stay ≤ 4×units +
-512 bytes, the committed entry ≤ 16×units + 1024 bytes.
-
-**Everything shipped is priced.** Source pricing applies only to files
-with a source extension of the entry's language (`languages.json`);
-every other file is data — priced at plain bytes, shipped verbatim.
-File paths cost 1 unit per byte, so names are not a free channel
-either. `entry.json` must stay a manifest: exactly the five known
-fields, at most 4096 bytes — and it is not copied into the run
-directory at all.
-
-- Every file in the entry directory except `entry.json` is measured.
+- Every file in the entry directory except `entry.json` is subject to
+  scoring. `entry.json` must stay a manifest: exactly the five known
+  fields, at most 4096 bytes — and it is not copied into the run
+  directory at all.
 - Files must be valid UTF-8 without NUL bytes. Symlinks are forbidden.
-  Violations fail the check — nothing unauditable ships.
-- Multi-byte UTF-8 runes cost their encoded size wherever bytes are
-  priced.
-- Reported alongside: non-whitespace bytes and non-blank line count
-  (informational only).
+  Violations fail the check — an entry is reviewable in full or it
+  does not ship.
+- Entries build and run exactly as committed.
 
 ## Conformance
 
@@ -123,54 +124,69 @@ Execution environment:
 ## Gates (what CI enforces on a PR)
 
 1. **Challenger rule.** Replacing an existing champion requires a
-   strictly smaller surface. Equal is not smaller.
+   strictly better trust score. Equal is not better.
 2. **New niche.** A first entry for an empty niche needs only to pass.
 3. **No removals.** An entry leaves the board by being beaten or by
    failing the suite — not by deletion. Deletion PRs are flagged for a
    maintainer.
-4. Everything above (measurement, conformance, text-only) must pass.
+4. Everything above (scoring, conformance, text-only) must pass.
 
 ## Test-case contributions
 
 A new case for an existing task is accepted when at least one of:
 
-- it **breaks a current entry** (CI runs all entries of the task against
-  the PR and reports who falls), or
+- it **breaks the current champion** (CI runs the champion against the
+  PR and reports the fall), or
 - it **closes a documented spec gap** — link the issue describing the
   underspecified behavior.
 
-A case that discriminates nothing adds runtime and proves nothing; it is
-closed. Merged breaking cases take effect at the next board build: broken
-champions show as *failing* and their niche is open to any passing entry
-(smaller than the failing champion or not — a failing champion defends
-nothing).
+A case that discriminates nothing adds runtime and proves nothing; it
+is closed. Merged breaking cases take effect at the next board build: a
+broken champion shows as *failing* and its niche is open to any passing
+entry (better-scored than the failing champion or not — a failing
+champion defends nothing).
 
 Cases must respect the task's `spec.md`. Changing the spec itself is a
 separate discussion in an issue, not a case PR.
 
 ## New tasks
 
+Topics are the maintainer's cut of real-world work — often a function
+lifted from an actual project, and by preference something the world
+usually solves by importing a library: parsers, format converters,
+validators, protocol pieces. That is where the score has tension —
+vendor the usual dependency and weigh it, or write it yourself and
+weigh nothing.
+
 A task PR ships: `spec.md` with a contract precise enough to implement
-against, at least 4 cases including at least one failure-mode case, and
-at least one passing entry as proof the spec is implementable. Expected
-outputs must state the tool that generated them (in `spec.md`).
+against (dialect pinned, corner cases decided), at least 4 cases
+including at least one failure-mode case, and at least one passing
+entry as proof the spec is implementable. `spec.md` must state how the
+expected outputs were derived.
 
 ## Languages
 
-`languages.json` maps a language to its pinned container image and its
-measurement syntax (comment markers, string shapes, no-discount
-patterns). The image is the trusted base — runtime and stdlib are free,
-everything else ships in the entry. Adding a language is a PR touching
-only `languages.json`: the image must be an official Docker Hub image,
-pinned to at least major.minor, and usable with networking disabled. A
-new language may start without a `syntax` block — byte pricing, shipped
-verbatim — and gain one in a later PR arguing why each discount is safe
-against that language's grammar. Image bumps and syntax changes are
+`languages.json` maps each playable language to:
+
+- its pinned container image — the trusted base: runtime and stdlib are
+  free, everything else ships in the entry;
+- its source `extensions` — which files the hazard scan applies to;
+- its `hazards` — the curated patterns, each with a `why`. Curation is
+  deliberate: a hazard list is an argument about the language, not a
+  style guide. Extending or correcting one is a PR touching only
+  `languages.json`;
+- optionally a `strip` config — comment syntax, string shapes, lex
+  guards — so documentation is never counted as a hazard. A language
+  without one scans raw (bash).
+
+Adding a language is a `languages.json` PR: an official Docker Hub
+image, pinned to at least major.minor, usable with networking disabled,
+plus a hazard list with argued whys. Image bumps and config changes are
 deliberate maintainer PRs, not automatic.
 
 ## For the paranoid (rightly so)
 
 Untrusted code runs only inside the no-network container with resource
 caps, as an unprivileged user, in a throwaway working directory. CI for
-first-time contributors requires maintainer approval before any workflow
-runs — that is a GitHub default and it stays on.
+first-time contributors requires maintainer approval before any
+workflow runs — that is a GitHub default and it stays on.

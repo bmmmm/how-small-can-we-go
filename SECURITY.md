@@ -28,22 +28,23 @@ model SPEC.md describes under "For the paranoid" is in scope:
   auto-close bot design in TODO.md is built to avoid — a job with
   `pull-requests: write` must never execute untrusted code.)
 - **Gate bypass** — a way to get an entry measured, checked, or merged
-  incorrectly: a surface count that doesn't reflect actual bytes, a
-  conformance check that reports a pass on a failing case, or a niche
-  awarded without a strictly smaller measured surface (SPEC.md gates
-  1–4).
+  incorrectly: vendored bytes that escape the count, a hazard hidden
+  from the scan (e.g. through a comment-stripping or string-tracking
+  desync), a conformance check that reports a pass on a failing case,
+  or a niche awarded without a strictly better measured trust score
+  (SPEC.md gates 1–4).
 - **Fork PR workflow abuse** — extracting secrets or tokens, or getting
   elevated permissions, through a first-time contributor's PR before it
   has maintainer approval to run.
 
 ## Not a security issue — just a game bug
 
-- An entry that's small but wrong in a way the test suite already
-  catches. That's a failing conformance check; let CI reject the PR, or
-  open a [question](https://github.com/bmmmm/how-small-can-we-go/issues/new?template=05-question.yml)
+- An entry that scores well but is wrong in a way the test suite
+  already catches. That's a failing conformance check; let CI reject
+  the PR, or open a [question](https://github.com/bmmmm/how-small-can-we-go/issues/new?template=05-question.yml)
   if you think the check itself is wrong.
 - An entry that's ugly or unreadable but stays inside the sandbox and
-  touches nothing it shouldn't. That's a case for a smaller or cleaner
+  touches nothing it shouldn't. That's a case for a better-scored
   challenger, not a report — the game handles it.
 - A task spec that's underspecified. That's a
   [spec gap report](https://github.com/bmmmm/how-small-can-we-go/issues/new?template=01-spec-gap.yml),

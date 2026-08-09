@@ -21,8 +21,8 @@ body:
     id: task
     attributes:
       label: Task
-      description: The task directory under `tasks/`, e.g. `sha256-file`.
-      placeholder: sha256-file
+      description: The task directory under `tasks/`, e.g. `dotenv-parse`.
+      placeholder: dotenv-parse
     validations:
       required: true
 

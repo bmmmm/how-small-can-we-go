@@ -8,11 +8,11 @@ doesn't restate them.
 
 No issue needed first — open the PR, CI measures it.
 
-- **Entry** for a niche (`entries/<task>/<language>/`). The submission
-  loop, including the local self-check to run before opening the PR, is
-  in [AGENTS.md](AGENTS.md).
-- **Test case** for an existing task. Must break a current entry or close
-  a documented spec gap that you link to — SPEC.md → "Test-case
+- **Entry** for a niche (`entries/<task>/` — one per topic, language
+  your choice). The submission loop, including the local self-check to
+  run before opening the PR, is in [AGENTS.md](AGENTS.md).
+- **Test case** for an existing task. Must break the current champion or
+  close a documented spec gap that you link to — SPEC.md → "Test-case
   contributions". One case per PR, nothing else in the diff.
 - **New task**: `spec.md` + at least 4 cases (one a failure mode) + one
   passing reference entry, all in the same PR — SPEC.md → "New tasks".

@@ -1,67 +1,77 @@
 # how small can we go?
 
-**The attack-surface golf arena.** Pick a task, write the smallest honest
-program that passes its test suite, dethrone the reigning champion. Every
-token you ship is a token someone has to audit — so that is exactly what
-we count: comments are free, `digest` costs what `d` costs, data costs
-its mass.
+**The trust-golf arena.** Small here does not mean short code — it
+means a small *trust footprint*: how little foreign code, how few
+dangerous constructs a program needs to do a real job. Pick a topic,
+implement it in any allowed language, dethrone the champion by needing
+less trust than it does.
 
 **Board:** https://bmmmm.github.io/how-small-can-we-go/
 
 ## The game in 60 seconds
 
-1. Pick a task in [`tasks/`](tasks/) and a language from
-   [`languages.json`](languages.json). That pair is a *niche*; the entry
-   sitting in `entries/<task>/<language>/` is its *champion*.
-2. Your entry must pass every test case of the task, build and run with
-   **no network**, ship **only text files**, and have a smaller **audit
-   surface** than the champion — audit units across everything in your
-   entry directory, vendored code included: comments free, identifiers
-   flat, literals and the rest per byte (SPEC.md has the exact table).
+1. Pick a topic in [`tasks/`](tasks/). One topic = one niche = one
+   champion — the entry in `entries/<task>/`. The language is *your*
+   choice (bash, c, go, python, rust — see
+   [`languages.json`](languages.json)); languages don't compete here,
+   entries do.
+2. Your entry must pass every test case of the topic, build and run
+   with **no network**, ship **only text files**, and have a strictly
+   better **trust score** than the champion:
+   - **third-party bytes** first — everything under `vendor/`; zero
+     means the topic is solved from the language and stdlib alone,
+   - **hazards** second — occurrences of the language's declared
+     danger patterns (process execution, eval, reflection, FFI, unsafe
+     memory), each one named with file, line, and reason.
+   Ties defend the champion.
 3. Open a PR that replaces the niche directory. CI measures; it never
-   believes. Beat the number or the PR closes.
+   believes. Beat the score or the PR closes.
 
 An entry is deliberately small ceremony: one 6-line `entry.json`
-manifest (excluded from measurement) plus your source files — that's
-the whole format, spelled out in [SPEC.md](SPEC.md).
+manifest plus your source — the whole format is in [SPEC.md](SPEC.md).
 
-An empty niche (no entry yet for that task × language)? The first passing
-entry takes it.
+An empty niche (a topic with no entry yet)? The first passing entry
+takes it.
 
-## Why smaller? (the honest version)
+## Why this score? (the honest version)
 
-Small is **not** automatically secure — ten lines can hold a command
-injection. What smallness buys is *auditability*: an entry you can read
-in one sitting, that builds offline from nothing but its own directory
-and a pinned base image. No transitive dependency graph, no post-install
-scripts, no "trust me" blobs. Supply-chain attacks live in the code you
-didn't read; this arena minimizes the code there is to read.
+Every dependency you pull is code you didn't read, maintained by
+people you don't know, fetched through infrastructure you don't
+control. Supply-chain attacks live exactly there. This arena flips the
+habit: the usual library import becomes the *expensive* move — vendor
+it and every byte weighs — while implementing from the stdlib weighs
+nothing.
 
-That is why the metric counts *audit units*, not bytes: an auditor pays
-per token, so readable names and comments are free, while every byte of
-data and every extra construct costs. Minifying a program changes
-nothing on the scoreboard — a strip-and-rename copy of the champion
-measures *equal*, and equal loses. The only way down is genuinely less:
-fewer constructs, less data, smaller dependencies. And what the metric
-counts as free provably never runs: entries execute in normalized form,
-comments stripped, whitespace collapsed.
+The second dimension prices the constructs that make code hard to
+trust even when you can read it: spawning processes, evaluating data
+as code, reflection, FFI, unsafe memory. Each language's list is
+curated and argued in [`languages.json`](languages.json) — every
+pattern carries its *why*, and every hit is reported with file and
+line.
 
-This is a game about audit surface, not a security certification.
+What deliberately does **not** count: code length, name length,
+comments. Readable, well-documented code costs nothing extra —
+comments are stripped before the hazard scan wherever the language is
+provably lexable, so documentation is never penalized. This is a game
+about demanded trust, not a security certification: a zero-score entry
+can still hold a bug — that is what the ever-sharpening test suites
+are for.
 
 ## What keeps the slop out
 
 - **Measured, never claimed.** CI builds in a container with networking
-  disabled and runs the task's full test suite. Numbers in a PR body are
-  decoration; the gate only trusts its own measurement.
-- **Improve or be closed.** A challenger must be *strictly* smaller than
-  the champion it replaces. An entry that beats nothing is closed
+  disabled and runs the topic's full test suite. Numbers in a PR body
+  are decoration; the gate only trusts its own measurement.
+- **Improve or be closed.** A challenger must score *strictly* better
+  than the champion it replaces. An entry that beats nothing is closed
   automatically — zero maintainer attention spent.
 - **Text only.** Invalid UTF-8, NUL bytes, or symlinks anywhere in an
-  entry fail the check. Nothing unauditable gets in.
+  entry fail the check. An entry is reviewable in full or it does not
+  ship.
 - **Tests are contributions too.** A new test case is accepted when it
-  breaks a current entry or closes a documented gap in a task's spec.
-  The suite gets sharper with every round, and the weekly re-run demotes
-  entries that no longer pass.
+  breaks the current champion or closes a documented gap in a topic's
+  spec. The suite gets sharper with every round, and the weekly re-run
+  demotes champions that no longer pass.
 
 AI-written entries are welcome — see [AGENTS.md](AGENTS.md) for the
 machine-readable contract. AI slop is not, and the difference is
@@ -71,10 +81,10 @@ measured, not vibes.
 
 ```sh
 cd tool && go build -o ../arena . && cd ..
-./arena check entries/sha256-file/go --no-sandbox   # host run, for iteration
-./arena check entries/sha256-file/go                # the real thing (needs docker)
-./arena surface entries/sha256-file/go              # just the number
-./arena board --no-sandbox                          # render docs/ locally
+./arena check entries/semver-range-check --no-sandbox   # host run, for iteration
+./arena check entries/semver-range-check                # the real thing (needs docker)
+./arena score entries/semver-range-check                # just the two numbers
+./arena board --no-sandbox                              # render docs/ locally
 ```
 
 No docker? Push your branch — the entry-check workflow runs the real
@@ -89,18 +99,18 @@ The full rules live in [SPEC.md](SPEC.md).
 No timelines, no "coming soon" — this is what's planned, not what's
 built:
 
-- **More tasks, more languages.** The board grows one niche at a time.
-  Task and language proposals are welcome via issues.
+- **More topics.** The board grows one niche at a time, by preference
+  functions lifted from real projects where the world usually reaches
+  for a library. Topic proposals are welcome via issues.
 - **Auto-merge for green entries.** A least-privilege bot merges a
-  passing challenger PR on its own — beaten champion out, smaller
+  passing challenger PR on its own — beaten champion out, better
   challenger in, no human in the loop.
 - **The chain (v2) — north star.** Once the solo game works: entries
   that may depend only on the pinned base images *and other entries of
-  this arena*. Compose bigger programs from small audited ones, watch
-  the total surface of the chain — climb until the chain gets too
-  heavy, then golf the links. That flips the usual dependency story:
-  instead of trusting an ecosystem, you trust a board where every link
-  was measured and fought over.
+  this arena*. Compose bigger programs from small trusted ones and
+  watch the total score of the chain. That flips the usual dependency
+  story: instead of trusting an ecosystem, you trust a board where
+  every link was measured and fought over.
 
 ## Support
 
