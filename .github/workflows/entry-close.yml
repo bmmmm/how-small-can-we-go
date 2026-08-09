@@ -1,6 +1,7 @@
 # Closes entry PRs that CI already rejected, with the measured numbers.
-# Only the classes on AGENTS.md's auto-reject list are closed; anything
-# else — removals, mixed PRs, unclassified runs — stays open for a human.
+# Only not-improving challengers are closed; anything else — conformance
+# failures, removals, mixed PRs, unclassified runs — stays open for a
+# human.
 # Action majors verified 2026-08 via
 # `gh api repos/<owner>/<action>/releases/latest`.
 #
@@ -94,14 +95,20 @@ jobs:
               'new-niche', 'beats-champion', 'open-niche',
               'not-improving', 'conformance-fail', 'removed',
             ]);
-            // AGENTS.md, "Auto-reject list".
-            const AUTO_REJECT = new Set(['not-improving', 'conformance-fail']);
+            // AGENTS.md's auto-reject list also names conformance
+            // failures, but a transient sandbox failure (docker exit
+            // 125: rate-limited pull, daemon hiccup) is indistinguishable
+            // from a real one in the artifact — closing a correct PR is
+            // the worst failure mode, so until the runner reports infra
+            // errors as their own class, only the deterministic
+            // surface comparison auto-closes.
+            const AUTO_REJECT = new Set(['not-improving']);
             const ENTRY_PATH = /^entries\/[a-z0-9-]+\/[a-z0-9-]+$/;
             const SHA = /^[0-9a-f]{40}$/;
             const MAX_BYTES = 65536;
             const MAX_ENTRIES = 50;
 
-            const stop = (why) => core.info(`no action: ${why}`);
+            const stop = (why) => core.notice(`no action: ${why}`);
             const isCount = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
 
             const run = context.payload.workflow_run;
@@ -136,8 +143,8 @@ jobs:
             if (typeof data.class !== 'string' || !VERDICT_CLASSES.has(data.class)) {
               return stop('unknown verdict class');
             }
-            if (typeof data.touched_tasks !== 'boolean' || typeof data.touched_languages !== 'boolean') {
-              return stop('invalid scope flags');
+            if (typeof data.touched_other !== 'boolean') {
+              return stop('invalid scope flag');
             }
             if (!Array.isArray(data.entries) || data.entries.length > MAX_ENTRIES) {
               return stop('invalid entry list');
@@ -173,8 +180,8 @@ jobs:
             if (entries.some((e) => e.status === 'removed')) {
               return stop('PR removes an entry — flagged for a maintainer (SPEC.md, gate 3)');
             }
-            if (data.touched_tasks || data.touched_languages) {
-              return stop('PR also touches tasks/ or languages.json — a maintainer decides');
+            if (data.touched_other) {
+              return stop('PR also touches files outside entries/ — a maintainer decides');
             }
             const cited = entries.filter((e) => e.status === data.class);
             if (cited.length === 0) return stop('verdict class has no matching entry');

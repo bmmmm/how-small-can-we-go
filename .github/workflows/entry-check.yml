@@ -49,12 +49,11 @@ jobs:
           # Verdicts for the result artifact — mirrors the summary lines,
           # never influences the gate below.
           record() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "${3-}" "${4-}" >> "$tsv"; }
-          # TODO: git's rename detection folds "delete entries/a/x + add
+          # --no-renames: without it git folds "delete entries/a/x + add
           # entries/a/y with identical content" into a single R100 line,
-          # so --name-only reports only the new path and the gate-3
-          # removal check below never sees it. --no-renames fixes it, but
-          # that changes enforcement — separate PR.
-          mapfile -t dirs < <(git diff --name-only "$BASE_SHA"...HEAD -- entries/ | cut -d/ -f1-3 | sort -u)
+          # the old path never surfaces, and the gate-3 removal check
+          # below is evadable by renaming a niche directory.
+          mapfile -t dirs < <(git diff --no-renames --name-only "$BASE_SHA"...HEAD -- entries/ | cut -d/ -f1-3 | sort -u)
           if [ "${#dirs[@]}" -eq 0 ]; then
             summary "No entry changes."
             : > "$RUNNER_TEMP/check-complete"
@@ -139,15 +138,13 @@ jobs:
           tsv="$RUNNER_TEMP/entries.tsv"
           mkdir -p "$out"
           [ -f "$tsv" ] || : > "$tsv"
-          # A PR that also moves cases, a task spec or languages.json is
-          # never a plain challenger — entry-close leaves those to a human.
-          touched_tasks=false
-          touched_languages=false
-          if [ -n "$(git diff --name-only "$BASE_SHA"...HEAD -- tasks/)" ]; then
-            touched_tasks=true
-          fi
-          if [ -n "$(git diff --name-only "$BASE_SHA"...HEAD -- languages.json)" ]; then
-            touched_languages=true
+          # A PR that touches anything outside entries/ — cases, specs,
+          # languages.json, the tool, the workflows — is never a plain
+          # challenger; entry-close leaves those to a human. --no-renames
+          # so a file renamed into entries/ still counts as outside.
+          touched_other=false
+          if [ -n "$(git diff --no-renames --name-only "$BASE_SHA"...HEAD -- . ':(exclude)entries/')" ]; then
+            touched_other=true
           fi
           if [ -f "$RUNNER_TEMP/check-complete" ]; then
             class=$(awk -F'\t' '
@@ -170,16 +167,14 @@ jobs:
             --argjson pr "$PR_NUMBER" \
             --arg head "$HEAD_SHA" \
             --arg class "$class" \
-            --argjson tasks "$touched_tasks" \
-            --argjson languages "$touched_languages" \
+            --argjson other "$touched_other" \
             --rawfile tsv "$tsv" \
             '{
                schema: "entry-check-result/1",
                pr: $pr,
                head_sha: $head,
                class: $class,
-               touched_tasks: $tasks,
-               touched_languages: $languages,
+               touched_other: $other,
                entries: ($tsv | split("\n") | map(select(length > 0)) | map(split("\t")) | map(
                  { path: (.[0] // ""), status: (.[1] // "") }
                  + (.[2] // "" | if . == "" then {} else { surface: (tonumber? // .) } end)
