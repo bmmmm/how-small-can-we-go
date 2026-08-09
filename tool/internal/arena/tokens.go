@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 // Audit-unit pricing. The surface counts what an auditor must process,
@@ -59,8 +60,28 @@ type Syntax struct {
 	// directives, shebangs): they are kept in the normalized form and
 	// priced like code.
 	KeepComments []string `json:"keepComments,omitempty"`
+	// Extensions lists the file suffixes this syntax applies to. Any
+	// other file in an entry is data, not source: it is priced at plain
+	// bytes and ships verbatim — source discounts on a data file would
+	// underprice it ~16× and comment-stripping could silently corrupt it.
+	Extensions []string `json:"extensions,omitempty"`
 
 	fileRe, lineRe, keepRe, exemptRe []*regexp.Regexp
+}
+
+// forFile returns the syntax to price a file with: the language's own
+// for its source extensions, nil (plain byte pricing, verbatim) for
+// everything else.
+func (s *Syntax) forFile(rel string) *Syntax {
+	if s == nil {
+		return nil
+	}
+	for _, ext := range s.Extensions {
+		if strings.HasSuffix(rel, ext) {
+			return s
+		}
+	}
+	return nil
 }
 
 type StringSyntax struct {
@@ -77,6 +98,7 @@ type StringSyntax struct {
 // compile validates the config and prepares its patterns. Called once at
 // load time so a broken languages.json fails loudly, not per entry.
 func (s *Syntax) compile() error {
+	s.fileRe, s.lineRe, s.keepRe, s.exemptRe = nil, nil, nil, nil
 	comp := func(pats []string, dst *[]*regexp.Regexp, field string) error {
 		for _, p := range pats {
 			re, err := regexp.Compile(p)
@@ -98,6 +120,9 @@ func (s *Syntax) compile() error {
 	}
 	if err := comp(s.NoDiscountFileExempt, &s.exemptRe, "noDiscountFileExempt"); err != nil {
 		return err
+	}
+	if len(s.Extensions) == 0 {
+		return fmt.Errorf("syntax config needs extensions — without them it would apply to no file")
 	}
 	for _, str := range s.Strings {
 		if str.Open == "" || str.Close == "" {
@@ -127,6 +152,10 @@ func measureFile(b []byte, syn *Syntax) fileResult {
 	for _, re := range syn.exemptRe {
 		probe = re.ReplaceAll(probe, nil)
 	}
+	// Collapse backslash-newline splices before probing, so a pattern
+	// like C's stringify guard cannot be broken across lines.
+	probe = bytes.ReplaceAll(probe, []byte("\\\r\n"), nil)
+	probe = bytes.ReplaceAll(probe, []byte("\\\n"), nil)
 	for i, re := range syn.fileRe {
 		if re.Match(probe) {
 			return fullPrice(b, fmt.Sprintf("matches no-discount pattern %q — plain byte pricing", syn.NoDiscountFile[i]))
@@ -209,12 +238,21 @@ func scan(b []byte, syn *Syntax) (fileResult, bool) {
 		if c == '\n' {
 			line++
 		}
+		noDiscount := c != '\n' && trig != nil && trig[line]
 		if isWS(c) {
-			e.ws(c)
+			// Interior whitespace of a triggered line may sit inside a
+			// construct the scanner cannot see (an f-string), so it is
+			// priced and ships verbatim. Leading whitespace is provably
+			// outside any construct and normalizes as usual.
+			if noDiscount && c != '\r' && e.started && !e.nlPending {
+				res.units++
+				e.emit(b[pos : pos+1])
+			} else {
+				e.ws(c)
+			}
 			pos++
 			continue
 		}
-		noDiscount := trig != nil && trig[line]
 
 		// Comments — only where discounts apply; on a triggered line the
 		// marker may sit inside a construct we cannot see (an f-string),
@@ -223,6 +261,14 @@ func scan(b []byte, syn *Syntax) (fileResult, bool) {
 			if m := matchAny(b, pos, syn.LineComments); m != "" {
 				end := lineEnd(b, pos)
 				comment := b[pos:end]
+				// A backslash at the end of a line comment splices the
+				// next line into it in C — the compiler's comment is
+				// longer than ours, so the graded artifact would run
+				// code the committed file does not. No proof, no
+				// discount.
+				if bytes.HasSuffix(bytes.TrimRight(comment, "\r"), []byte("\\")) {
+					return fileResult{note: "line splice at the end of a line comment — plain byte pricing"}, false
+				}
 				if matchRe(comment, syn.keepRe) {
 					res.units += countNonWS(comment)
 					e.emit(comment)
@@ -242,6 +288,13 @@ func scan(b []byte, syn *Syntax) (fileResult, bool) {
 				// discount.
 				if bytes.Contains(comment, []byte("\\\n")) {
 					return fileResult{note: "line splice inside a block comment — plain byte pricing"}, false
+				}
+				// A nested opener would end earlier here than in Rust
+				// (whose block comments nest) — normalizing would leave
+				// a stray closer behind. Actionable note instead of a
+				// baffling compiler error.
+				if bytes.Contains(comment[len(open):len(comment)-len(cl)], []byte(open)) {
+					return fileResult{note: "nested block comment — plain byte pricing"}, false
 				}
 				line += bytes.Count(comment, []byte("\n"))
 				if matchRe(comment, syn.keepRe) {
@@ -403,8 +456,12 @@ func isWS(c byte) bool {
 	return false
 }
 
+// Non-ASCII bytes count as identifier bytes: Go, Rust and Python allow
+// Unicode identifiers, and treating a continuation byte as a boundary
+// would reset the flat price mid-name — a 720-byte identifier for a
+// handful of units.
 func isIdentStart(c byte) bool {
-	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
 }
 
 func isIdentByte(c byte) bool {

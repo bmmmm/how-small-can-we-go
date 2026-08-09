@@ -12,6 +12,7 @@ import (
 func goSyntax(t *testing.T) *Syntax {
 	t.Helper()
 	s := &Syntax{
+		Extensions:    []string{".go"},
 		LineComments:  []string{"//"},
 		BlockComments: [][2]string{{"/*", "*/"}},
 		Strings: []StringSyntax{
@@ -32,6 +33,7 @@ func goSyntax(t *testing.T) *Syntax {
 func pySyntax(t *testing.T) *Syntax {
 	t.Helper()
 	s := &Syntax{
+		Extensions:   []string{".py"},
 		LineComments: []string{"#"},
 		Strings: []StringSyntax{
 			{Open: `"""`, Close: `"""`, Escape: `\`, Multiline: true},
@@ -157,8 +159,8 @@ func TestFStringLineIsBytePricedVerbatim(t *testing.T) {
 	if r.note != "" {
 		t.Fatalf("file-level fallback not expected: %s", r.note)
 	}
-	if r.units != 3+11 { // y,=,1 + 11 non-ws bytes of the f-string line
-		t.Errorf("units = %d, want 14", r.units)
+	if r.units != 3+13 { // y,=,1 + every byte of the f-string line, interior spaces included
+		t.Errorf("units = %d, want 16", r.units)
 	}
 	if !strings.Contains(string(r.norm), "f\"{d} #x\"") {
 		t.Errorf("norm = %q — nothing on an f-string line may be stripped", r.norm)
@@ -179,6 +181,7 @@ func TestBlockCommentLineSpliceForcesBytePricing(t *testing.T) {
 
 func TestRustRawStringTriggersBytePricing(t *testing.T) {
 	s := &Syntax{
+		Extensions:     []string{".rs"},
 		LineComments:   []string{"//"},
 		BlockComments:  [][2]string{{"/*", "*/"}},
 		Strings:        []StringSyntax{{Open: `"`, Close: `"`, Escape: `\`, Multiline: true}},
@@ -220,6 +223,90 @@ func TestGoBlockCommentBecomesNewline(t *testing.T) {
 	r := measureFile([]byte("a()\n/*\nc\n*/\nb()\n"), goSyntax(t))
 	if string(r.norm) != "a()\nb()\n" {
 		t.Errorf("norm = %q, want %q", r.norm, "a()\nb()\n")
+	}
+}
+
+// A Unicode byte inside an identifier must not reset the flat-price
+// boundary — Go/Rust/Python allow Unicode names, and a reset would sell
+// a 720-byte identifier for a handful of units.
+func TestUnicodeIdentifierCostsExcess(t *testing.T) {
+	syn := goSyntax(t)
+	ident := strings.Repeat("a", 16) + "π" + strings.Repeat("a", 16) // 34 bytes, one identifier
+	if u := units(t, ident+"\n", syn); u != 19 {                     // 1 + (34-16)
+		t.Errorf("units = %d, want 19 — unicode bytes must not split the flat price", u)
+	}
+}
+
+// gcc splices `\`+newline before comment recognition, so a line comment
+// ending in a backslash swallows the next line — the committed file and
+// the graded artifact would be different programs.
+func TestLineCommentSpliceForcesBytePricing(t *testing.T) {
+	syn := goSyntax(t)
+	if r := measureFile([]byte("// harmless \\\nputs(\"EVIL\");\nputs(\"ok\");\n"), syn); r.note == "" {
+		t.Fatal("line comment ending in backslash not flagged")
+	}
+}
+
+// Rust block comments nest; ending at the first closer would normalize
+// a stray `*/` into live code. The fallback must say so.
+func TestNestedBlockCommentForcesBytePricing(t *testing.T) {
+	syn := goSyntax(t)
+	r := measureFile([]byte("/* a /* b */ x = 1; */\n"), syn)
+	if !strings.Contains(r.note, "nested block comment") {
+		t.Fatalf("nested block comment not flagged actionably: %q", r.note)
+	}
+}
+
+// The C stringify guard must hold across a backslash-newline splice:
+// `#define S(x) \` + `#x` is the same macro as the one-line form.
+func TestStringifyGuardSurvivesLineSplice(t *testing.T) {
+	s := &Syntax{
+		Extensions:     []string{".c"},
+		LineComments:   []string{"//"},
+		BlockComments:  [][2]string{{"/*", "*/"}},
+		Strings:        []StringSyntax{{Open: `"`, Close: `"`, Escape: `\`}},
+		NoDiscountFile: []string{`#\s*define.*#`},
+	}
+	if err := s.compile(); err != nil {
+		t.Fatal(err)
+	}
+	if r := measureFile([]byte("#define S(x) \\\n  #x\nS(aaaaaaaaaaaaaaaa);\n"), s); r.note == "" {
+		t.Fatal("spliced stringify macro not flagged — identifier names would become a data channel")
+	}
+}
+
+// Interior whitespace on a triggered line may sit inside a construct the
+// scanner cannot see (Python 3.12 nested-quote f-strings): it must ship
+// verbatim and be priced, not collapsed for free.
+func TestTriggeredLineWhitespaceShipsVerbatimAndCosts(t *testing.T) {
+	syn := pySyntax(t)
+	src := "print(f\"{\"          \"}\")\n"
+	r := measureFile([]byte(src), syn)
+	if r.note != "" {
+		t.Fatalf("unexpected fallback: %s", r.note)
+	}
+	if string(r.norm) != src {
+		t.Errorf("norm = %q, want byte-identical — collapsing changes what the program prints", r.norm)
+	}
+	if r.units != 24 { // every byte except the newline
+		t.Errorf("units = %d, want 24 — triggered-line whitespace is priced", r.units)
+	}
+}
+
+// Files without a source extension are data: no source discounts (a
+// comment marker in a CSV is content, not a comment) and no rewriting.
+func TestDataFilesArePricedAsBytesAndShipVerbatim(t *testing.T) {
+	syn := goSyntax(t)
+	data := "see https://x/y//z /*a*/ end\n"
+	r := measureFile([]byte(data), syn.forFile("data.txt"))
+	if string(r.norm) != data {
+		t.Errorf("norm = %q — data files must survive byte-identical", r.norm)
+	}
+	if s, _ := measureBytes([]byte(data)); r.units != s {
+		t.Errorf("units = %d, want %d — data files cost plain bytes", r.units, s)
+	}
+	if measureFile([]byte(data), syn.forFile("main.go")).units == r.units {
+		t.Error("source file unexpectedly priced like data — extension routing broken")
 	}
 }
 

@@ -48,8 +48,8 @@ func TestCheckEntryPasses(t *testing.T) {
 	if len(res.Cases) != 2 {
 		t.Fatalf("want 2 cases, got %d", len(res.Cases))
 	}
-	if res.Measure.Surface != 7 {
-		t.Errorf("surface = %d, want 7", res.Measure.Surface)
+	if res.Measure.Surface != 7+7 { // 7 content + len("main.sh")
+		t.Errorf("surface = %d, want 14", res.Measure.Surface)
 	}
 }
 
@@ -136,6 +136,51 @@ func TestSandboxProgramExitIsAVerdict(t *testing.T) {
 				t.Errorf("missing failed although exit 1 satisfies nonzero: %s", c.Detail)
 			}
 		}
+	}
+}
+
+// entry.json is unmeasured, so it must never reach the run directory —
+// there it would be a covert data store readable at runtime.
+func TestEntryJSONDoesNotShip(t *testing.T) {
+	root := testRepo(t)
+	// cat entry.json must fail in the working directory; the `missing`
+	// case (expects nonzero) passes only if the file is truly absent.
+	writeFile(t, filepath.Join(root, "entries/echo-file/sh/main.sh"), "cat entry.json\n")
+	res := CheckEntry(filepath.Join(root, "entries/echo-file/sh"), Options{RepoRoot: root})
+	for _, c := range res.Cases {
+		if c.Name == "missing" && !c.Pass {
+			t.Errorf("entry.json was readable at runtime: %s", c.Detail)
+		}
+	}
+}
+
+func TestLoadManifestRejectsUnknownFieldsAndBulk(t *testing.T) {
+	root := testRepo(t)
+	dir := filepath.Join(root, "entries/echo-file/sh")
+	writeFile(t, filepath.Join(dir, "entry.json"),
+		`{"task": "echo-file", "language": "sh", "authors": ["test"], "run": "sh main.sh", "d": "ZZZZ"}`)
+	if _, err := LoadManifest(dir); err == nil {
+		t.Error("unknown manifest field accepted — unmeasured freight")
+	}
+	writeFile(t, filepath.Join(dir, "entry.json"),
+		`{"task": "echo-file", "language": "sh", "authors": ["`+strings.Repeat("Z", 5000)+`"], "run": "sh main.sh"}`)
+	if _, err := LoadManifest(dir); err == nil {
+		t.Error("oversized manifest accepted")
+	}
+}
+
+// File names are priced: an auditor reads them, and unpriced names would
+// be a free data channel into the working directory.
+func TestMeasureDirPricesFilePaths(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "entry.json"), `{"ignored": true}`)
+	writeFile(t, filepath.Join(dir, "main.sh"), "cat \"$1\"\n")
+	m, err := MeasureDir(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Surface != 7+len("main.sh") {
+		t.Errorf("surface = %d, want %d — file paths cost 1 unit per byte", m.Surface, 7+len("main.sh"))
 	}
 }
 

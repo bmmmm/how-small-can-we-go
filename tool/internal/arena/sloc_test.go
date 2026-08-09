@@ -49,11 +49,11 @@ func TestMeasureDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Files != 1 || m.Surface != 7 || m.Lines != 1 {
-		t.Errorf("got %+v, want 1 file, surface 7, 1 line", m)
+	if m.Files != 1 || m.Surface != 7+7 || m.Lines != 1 { // 7 content + len("main.sh")
+		t.Errorf("got %+v, want 1 file, surface 14, 1 line", m)
 	}
-	if m.RawBytes != 9 || m.NormBytes != 9 {
-		t.Errorf("raw = %d, normalized = %d, want 9/9 — nil syntax ships verbatim", m.RawBytes, m.NormBytes)
+	if m.RawBytes != 9+7 || m.NormBytes != 9+7 {
+		t.Errorf("raw = %d, normalized = %d, want 16/16 — nil syntax ships verbatim, paths count", m.RawBytes, m.NormBytes)
 	}
 }
 

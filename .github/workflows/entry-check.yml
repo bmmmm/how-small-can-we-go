@@ -109,7 +109,10 @@ jobs:
             fi
             new=$("$arena" surface "$d")
             if [ -d "$RUNNER_TEMP/base/$d" ]; then
-              old=$(cd "$RUNNER_TEMP/base" && "$arena" surface "$d")
+              # Measured from the PR checkout on purpose: both sides are
+              # priced under the PR's languages.json, so a PR touching
+              # the syntax config cannot compare apples to oranges.
+              old=$("$arena" surface "$RUNNER_TEMP/base/$d")
               if [ "$new" -lt "$old" ]; then
                 summary "- ✅ surface: $new < $old — champion beaten"
                 record "$d" beats-champion "$new" "$old"

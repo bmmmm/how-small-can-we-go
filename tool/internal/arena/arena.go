@@ -5,6 +5,7 @@
 package arena
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -29,14 +30,23 @@ type Language struct {
 	Syntax *Syntax `json:"syntax,omitempty"`
 }
 
+// maxManifestBytes bounds entry.json. The manifest is excluded from
+// measurement, so it must stay a manifest: five known fields, no bulk.
+const maxManifestBytes = 4096
+
 func LoadManifest(entryDir string) (Manifest, error) {
 	b, err := os.ReadFile(filepath.Join(entryDir, "entry.json"))
 	if err != nil {
 		return Manifest{}, fmt.Errorf("every entry needs an entry.json (see SPEC.md): %w", err)
 	}
+	if len(b) > maxManifestBytes {
+		return Manifest{}, fmt.Errorf("%s/entry.json is %d bytes — a manifest holds five short fields, max %d bytes", entryDir, len(b), maxManifestBytes)
+	}
 	var m Manifest
-	if err := json.Unmarshal(b, &m); err != nil {
-		return Manifest{}, fmt.Errorf("%s/entry.json is not valid JSON: %w", entryDir, err)
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields() // unknown keys would be unmeasured freight
+	if err := dec.Decode(&m); err != nil {
+		return Manifest{}, fmt.Errorf("%s/entry.json is not a valid manifest (fields: task, language, authors, build, run): %w", entryDir, err)
 	}
 	switch {
 	case m.Task == "":

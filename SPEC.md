@@ -78,13 +78,21 @@ therefore only ever cost too much, never too little. `arena check` and
 `arena surface` name every file that lost its discounts and why.
 
 **You play what you weigh.** The measured form is the executed form:
-before building, comments are stripped and whitespace is collapsed
-(indentation survives where it is grammar, e.g. Python; semantic
-comments like `//go:` directives and shebangs survive and are priced).
-Whatever the metric counted as free provably never runs. Two volume
-caps keep the free channels from becoming a covert data store an entry
-reads back at runtime: the normalized entry must stay ≤ 4×units + 512
-bytes, the committed entry ≤ 16×units + 1024 bytes.
+before building, source files have comments stripped and whitespace
+collapsed (indentation survives where it is grammar, e.g. Python;
+semantic comments like `//go:` directives and shebangs survive and are
+priced). Whatever the metric counted as free provably never runs. Two
+volume caps keep the free channels from becoming a covert data store an
+entry reads back at runtime: the normalized entry must stay ≤ 4×units +
+512 bytes, the committed entry ≤ 16×units + 1024 bytes.
+
+**Everything shipped is priced.** Source pricing applies only to files
+with a source extension of the entry's language (`languages.json`);
+every other file is data — priced at plain bytes, shipped verbatim.
+File paths cost 1 unit per byte, so names are not a free channel
+either. `entry.json` must stay a manifest: exactly the five known
+fields, at most 4096 bytes — and it is not copied into the run
+directory at all.
 
 - Every file in the entry directory except `entry.json` is measured.
 - Files must be valid UTF-8 without NUL bytes. Symlinks are forbidden.

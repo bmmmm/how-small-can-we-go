@@ -24,18 +24,22 @@ type Measure struct {
 
 // MeasureDir measures every file under dir except the entry.json
 // manifest, using the language's syntax for audit-unit pricing (nil
-// syntax = plain byte pricing). Non-text files (invalid UTF-8 or NUL
-// bytes) and symlinks are rejected: an entry must ship auditable source
-// only.
+// syntax = plain byte pricing). File paths are priced at 1 unit per
+// byte — an auditor reads names too, and unmeasured names would be a
+// free data channel. Non-text files (invalid UTF-8 or NUL bytes) and
+// symlinks are rejected: an entry must ship auditable source only.
 func MeasureDir(dir string, syn *Syntax) (Measure, error) {
 	var m Measure
 	err := walkEntryFiles(dir, func(path, rel string, b []byte) error {
-		r := measureFile(b, syn)
-		m.Surface += r.units
+		r := measureFile(b, syn.forFile(rel))
+		if syn != nil && syn.forFile(rel) == nil {
+			r.note = "not a source extension of this language — data is priced at plain bytes and ships verbatim"
+		}
+		m.Surface += r.units + len(rel)
 		m.Bytes += countNonWS(b)
 		m.Lines += r.lines
-		m.RawBytes += len(b)
-		m.NormBytes += len(r.norm)
+		m.RawBytes += len(b) + len(rel)
+		m.NormBytes += len(r.norm) + len(rel)
 		m.Files++
 		if r.note != "" {
 			m.Notes = append(m.Notes, rel+": "+r.note)
@@ -52,21 +56,22 @@ func MeasureDir(dir string, syn *Syntax) (Measure, error) {
 }
 
 // NormalizeTree writes the normalized form of the entry at src into dst:
-// comments stripped, whitespace collapsed, everything else verbatim. The
-// normalized form is what builds and runs — you play what you weigh, so
-// bytes that were measured as free provably never execute. entry.json is
-// copied verbatim.
+// source files with comments stripped and whitespace collapsed, data
+// files verbatim. The normalized form is what builds and runs — you play
+// what you weigh, so bytes that were measured as free provably never
+// execute. entry.json is not shipped at all: it is arena metadata, and
+// as an unmeasured file in the working directory it would be a covert
+// data store readable at runtime.
 func NormalizeTree(src, dst string, syn *Syntax) error {
 	return walkAllFiles(src, func(path, rel string, b []byte, perm fs.FileMode) error {
-		out := b
-		if rel != "entry.json" {
-			out = measureFile(b, syn).norm
+		if rel == "entry.json" {
+			return nil
 		}
 		target := filepath.Join(dst, rel)
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
-		return os.WriteFile(target, out, perm)
+		return os.WriteFile(target, measureFile(b, syn.forFile(rel)).norm, perm)
 	})
 }
 

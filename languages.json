@@ -2,18 +2,20 @@
   "c": {
     "image": "gcc:14",
     "syntax": {
+      "extensions": [".c", ".h"],
       "lineComments": ["//"],
       "blockComments": [["/*", "*/"]],
       "strings": [
         { "open": "\"", "close": "\"", "escape": "\\" },
         { "open": "'", "close": "'", "escape": "\\" }
       ],
-      "noDiscountFile": ["\\?\\?/", "#\\s*define.*#"]
+      "noDiscountFile": ["\\?\\?/", "#\\s*define.*#", "__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"]
     }
   },
   "go": {
     "image": "golang:1.26-alpine",
     "syntax": {
+      "extensions": [".go"],
       "lineComments": ["//"],
       "blockComments": [["/*", "*/"]],
       "strings": [
@@ -22,13 +24,14 @@
         { "open": "'", "close": "'", "escape": "\\" }
       ],
       "blockCommentIsNewline": true,
-      "noDiscountFile": ["\\breflect\\b"],
+      "noDiscountFile": ["\\breflect\\b", "\\bruntime\\b", "%[+#]v"],
       "keepComments": ["^//go:", "^//line ", "^//export "]
     }
   },
   "python": {
     "image": "python:3.13-alpine",
     "syntax": {
+      "extensions": [".py"],
       "lineComments": ["#"],
       "strings": [
         { "open": "\"\"\"", "close": "\"\"\"", "escape": "\\", "multiline": true },
@@ -52,12 +55,13 @@
   "rust": {
     "image": "rust:1.83-alpine",
     "syntax": {
+      "extensions": [".rs"],
       "lineComments": ["//"],
       "blockComments": [["/*", "*/"]],
       "strings": [
         { "open": "\"", "close": "\"", "escape": "\\", "multiline": true }
       ],
-      "noDiscountFile": ["'\"", "\\br#*\"", "\\bbr", "stringify!", "macro_rules!"]
+      "noDiscountFile": ["'\"", "\\br#*\"", "\\bbr", "stringify!", "macro_rules!", "type_name", "derive\\s*\\(\\s*Debug"]
     }
   },
   "sh": { "image": "alpine:3.21" }
