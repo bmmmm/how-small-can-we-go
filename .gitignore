@@ -4,3 +4,7 @@
 
 # generated board (built in CI, deployed to Pages)
 /docs/
+
+# local scratch (drafts, throwaway experiments) and agent worktrees
+/tmp/
+/.claude/worktrees/
