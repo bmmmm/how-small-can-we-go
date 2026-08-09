@@ -114,7 +114,7 @@ jobs:
             // (docker exit 125 etc.) as infra-error instead of blaming
             // the entry, so conformance-fail is trustworthy here.
             const AUTO_REJECT = new Set(['not-improving', 'conformance-fail']);
-            const ENTRY_PATH = /^entries\/[a-z0-9-]+\/[a-z0-9-]+$/;
+            const ENTRY_PATH = /^entries\/[a-z0-9-]+$/;
             const SHA = /^[0-9a-f]{40}$/;
             const MAX_BYTES = 65536;
             const MAX_ENTRIES = 50;
@@ -143,11 +143,10 @@ jobs:
             if (data === null || typeof data !== 'object' || Array.isArray(data)) {
               return stop('result is not an object');
             }
-            // Schema 2 is the first whose producer separates infra
-            // failures from conformance failures. A v1 artifact (a PR
-            // branched before that fix) may blame a docker hiccup on
-            // the entry — never auto-close on one.
-            if (data.schema !== 'entry-check-result/2') return stop('unknown result schema');
+            // Schema 3 is the trust-score producer (vendored bytes +
+            // hazards). An older artifact reports the retired surface
+            // metric — its numbers mean nothing here, never act on one.
+            if (data.schema !== 'entry-check-result/3') return stop('unknown result schema');
             if (!isCount(data.pr, 10000000) || data.pr < 1) return stop('invalid PR number');
             if (typeof data.head_sha !== 'string' || !SHA.test(data.head_sha)) {
               return stop('invalid head SHA');
@@ -178,11 +177,12 @@ jobs:
               }
               const entry = { path: item.path, status: item.status };
               if (item.status === 'not-improving') {
-                if (!isCount(item.surface, 1000000000) || !isCount(item.champion, 1000000000)) {
-                  return stop('invalid surface numbers');
+                for (const field of ['vendored', 'hazards', 'champion_vendored', 'champion_hazards']) {
+                  if (!isCount(item[field], 1000000000)) {
+                    return stop('invalid score numbers');
+                  }
+                  entry[field] = item[field];
                 }
-                entry.surface = item.surface;
-                entry.champion = item.champion;
               }
               entries.push(entry);
             }
@@ -239,10 +239,10 @@ jobs:
             }
 
             // Built from validated values only: paths matched against
-            // ENTRY_PATH, surfaces are integers, the rest is literal.
+            // ENTRY_PATH, scores are integers, the rest is literal.
             const lines = [marker, '', 'Closing: no entry in this PR clears the gates.', ''];
             for (const e of notImproving) {
-              lines.push(`- \`${e.path}\` — challenger surface **${e.surface}**, champion **${e.champion}**: replacing a champion requires a strictly smaller audit surface, equal is not smaller (SPEC.md, gate 1)`);
+              lines.push(`- \`${e.path}\` — challenger trust score **${e.vendored} third-party bytes / ${e.hazards} hazards**, champion **${e.champion_vendored} / ${e.champion_hazards}**: replacing a champion requires a strictly better score — fewer third-party bytes, or equal bytes and fewer hazards; equal defends (SPEC.md, gate 1)`);
             }
             for (const e of failing) {
               lines.push(`- \`${e.path}\` — conformance failed; the entry-check log names the failing case and why (SPEC.md, gate 4)`);
@@ -250,7 +250,7 @@ jobs:
             lines.push(
               '',
               `Measured by [entry-check](${run.html_url}) on \`${run.head_sha}\`.`,
-              'A strictly smaller entry that passes is welcome — open a new PR.',
+              'An entry with a strictly better trust score that passes is welcome — open a new PR.',
             );
 
             await github.rest.issues.createComment({

@@ -1,6 +1,7 @@
 # Gates entry PRs: conformance in a no-network sandbox + the challenger
-# rule (strictly smaller surface than the champion). Case PRs get an
-# informational impact run. Action majors verified 2026-08 via
+# rule (strictly better trust score than the champion: fewer third-party
+# bytes, or equal bytes and fewer hazards). Case PRs get an informational
+# impact run. Action majors verified 2026-08 via
 # `gh api repos/<owner>/<action>/releases/latest`.
 #
 # This workflow executes untrusted PR code and its own file comes from
@@ -52,9 +53,10 @@ jobs:
       - name: Check changed entries
         env:
           # Base at event time. If main advanced since, the champion
-          # compared against may be stale — safe, because a champion
-          # only ever shrinks: not-improving vs the old one implies
-          # not-improving vs the new one.
+          # compared against may be stale — safe, because a champion's
+          # score only ever improves and the score order is total:
+          # not-improving vs the old one implies not-improving vs the
+          # new one.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           # push/dispatch runs have no PR context — compare against the
@@ -67,13 +69,17 @@ jobs:
           : > "$tsv"
           summary() { echo "$@" >> "$GITHUB_STEP_SUMMARY"; }
           # Verdicts for the result artifact — mirrors the summary lines,
-          # never influences the gate below.
-          record() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "${3-}" "${4-}" >> "$tsv"; }
+          # never influences the gate below. Columns: path, status,
+          # vendored, hazards, champion vendored, champion hazards.
+          record() { printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "${3-}" "${4-}" "${5-}" "${6-}" >> "$tsv"; }
+          # Lexicographic score order: fewer third-party bytes, or equal
+          # bytes and fewer hazards. Equal defends the champion.
+          better() { [ "$1" -lt "$3" ] || { [ "$1" -eq "$3" ] && [ "$2" -lt "$4" ]; }; }
           # --no-renames: without it git folds "delete entries/a/x + add
-          # entries/a/y with identical content" into a single R100 line,
+          # entries/b/x with identical content" into a single R100 line,
           # the old path never surfaces, and the gate-3 removal check
           # below is evadable by renaming a niche directory.
-          mapfile -t dirs < <(git diff --no-renames --name-only "$BASE_SHA"...HEAD -- entries/ | cut -d/ -f1-3 | sort -u)
+          mapfile -t dirs < <(git diff --no-renames --name-only "$BASE_SHA"...HEAD -- entries/ | cut -d/ -f1-2 | sort -u)
           if [ "${#dirs[@]}" -eq 0 ]; then
             summary "No entry changes."
             : > "$RUNNER_TEMP/check-complete"
@@ -107,15 +113,15 @@ jobs:
               fail=1
               continue
             fi
-            new=$("$arena" surface "$d")
+            read -r new_v new_h <<< "$("$arena" score "$d")"
             if [ -d "$RUNNER_TEMP/base/$d" ]; then
-              # Measured from the PR checkout on purpose: both sides are
-              # priced under the PR's languages.json, so a PR touching
-              # the syntax config cannot compare apples to oranges.
-              old=$("$arena" surface "$RUNNER_TEMP/base/$d")
-              if [ "$new" -lt "$old" ]; then
-                summary "- ✅ surface: $new < $old — champion beaten"
-                record "$d" beats-champion "$new" "$old"
+              # Scored from the PR checkout on purpose: both sides are
+              # scored under the PR's languages.json, so a PR touching
+              # the hazard config cannot compare apples to oranges.
+              read -r old_v old_h <<< "$("$arena" score "$RUNNER_TEMP/base/$d")"
+              if better "$new_v" "$new_h" "$old_v" "$old_h"; then
+                summary "- ✅ trust score: $new_v bytes / $new_h hazards beats $old_v / $old_h — champion beaten"
+                record "$d" beats-champion "$new_v" "$new_h" "$old_v" "$old_h"
               else
                 base_rc=0
                 (cd "$RUNNER_TEMP/base" && "$arena" check "$d") || base_rc=$?
@@ -124,17 +130,17 @@ jobs:
                   record "$d" infra-error
                   fail=1
                 elif [ "$base_rc" -eq 0 ]; then
-                  summary "- ❌ surface: $new, champion: $old — a challenger must be strictly smaller (SPEC.md, gate 1)"
-                  record "$d" not-improving "$new" "$old"
+                  summary "- ❌ trust score: $new_v bytes / $new_h hazards, champion: $old_v / $old_h — a challenger must be strictly better: fewer third-party bytes, or equal bytes and fewer hazards (SPEC.md, gate 1)"
+                  record "$d" not-improving "$new_v" "$new_h" "$old_v" "$old_h"
                   fail=1
                 else
-                  summary "- ✅ surface: $new — champion was failing, the niche was open"
-                  record "$d" open-niche "$new" "$old"
+                  summary "- ✅ trust score: $new_v bytes / $new_h hazards — champion was failing, the niche was open"
+                  record "$d" open-niche "$new_v" "$new_h" "$old_v" "$old_h"
                 fi
               fi
             else
-              summary "- ✅ surface: $new — new niche"
-              record "$d" new-niche "$new"
+              summary "- ✅ trust score: $new_v bytes / $new_h hazards — new niche"
+              record "$d" new-niche "$new_v" "$new_h"
             fi
           done
           : > "$RUNNER_TEMP/check-complete"
@@ -155,16 +161,13 @@ jobs:
             echo "A new case is accepted when it breaks a current entry or closes a documented spec gap (SPEC.md)."
           } >> "$GITHUB_STEP_SUMMARY"
           for t in "${tasks[@]}"; do
-            name=$(basename "$t")
-            for e in entries/"$name"/*/; do
-              [ -d "$e" ] || continue
-              e="${e%/}"
-              if "$arena" check "$e"; then
-                echo "- \`$e\`: still passing" >> "$GITHUB_STEP_SUMMARY"
-              else
-                echo "- \`$e\`: **breaks** — this case discriminates" >> "$GITHUB_STEP_SUMMARY"
-              fi
-            done
+            e="entries/$(basename "$t")"
+            [ -d "$e" ] || continue
+            if "$arena" check "$e"; then
+              echo "- \`$e\`: still passing" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- \`$e\`: **breaks** — this case discriminates" >> "$GITHUB_STEP_SUMMARY"
+            fi
           done
           exit 0
 
@@ -220,15 +223,17 @@ jobs:
             --argjson other "$touched_other" \
             --rawfile tsv "$tsv" \
             '{
-               schema: "entry-check-result/2",
+               schema: "entry-check-result/3",
                pr: $pr,
                head_sha: $head,
                class: $class,
                touched_other: $other,
                entries: ($tsv | split("\n") | map(select(length > 0)) | map(split("\t")) | map(
                  { path: (.[0] // ""), status: (.[1] // "") }
-                 + (.[2] // "" | if . == "" then {} else { surface: tonumber } end)
-                 + (.[3] // "" | if . == "" then {} else { champion: tonumber } end)
+                 + (.[2] // "" | if . == "" then {} else { vendored: tonumber } end)
+                 + (.[3] // "" | if . == "" then {} else { hazards: tonumber } end)
+                 + (.[4] // "" | if . == "" then {} else { champion_vendored: tonumber } end)
+                 + (.[5] // "" | if . == "" then {} else { champion_hazards: tonumber } end)
                ))
              }' > "$out/result.json"
           cat "$out/result.json"

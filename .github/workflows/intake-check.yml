@@ -60,7 +60,7 @@ jobs:
 
           echo "- Files touched: ${#changed[@]}" >> "$GITHUB_STEP_SUMMARY"
 
-          niches=$(printf '%s\n' "${changed[@]}" | grep '^entries/' | cut -d/ -f1-3 | sort -u || true)
+          niches=$(printf '%s\n' "${changed[@]}" | grep '^entries/' | cut -d/ -f1-2 | sort -u || true)
           [ -n "$niches" ] && echo "  - entries/: $(printf '%s' "$niches" | tr '\n' ' ')" >> "$GITHUB_STEP_SUMMARY"
 
           tasks=$(printf '%s\n' "${changed[@]}" | grep '^tasks/' | cut -d/ -f1-2 | sort -u || true)
