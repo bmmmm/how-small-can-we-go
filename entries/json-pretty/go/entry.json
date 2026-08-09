@@ -1,0 +1,7 @@
+{
+  "task": "json-pretty",
+  "language": "go",
+  "authors": ["bmmmm"],
+  "build": "go build -o prog main.go",
+  "run": "./prog"
+}
