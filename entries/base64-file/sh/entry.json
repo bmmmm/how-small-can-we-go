@@ -1,0 +1,6 @@
+{
+  "task": "base64-file",
+  "language": "sh",
+  "authors": ["bmmmm"],
+  "run": "sh prog.sh"
+}

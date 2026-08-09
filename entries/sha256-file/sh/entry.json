@@ -1,0 +1,6 @@
+{
+  "task": "sha256-file",
+  "language": "sh",
+  "authors": ["bmmmm"],
+  "run": "sh prog.sh"
+}
