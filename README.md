@@ -2,8 +2,9 @@
 
 **The attack-surface golf arena.** Pick a task, write the smallest honest
 program that passes its test suite, dethrone the reigning champion. Every
-byte you ship is a byte someone has to audit — so that is exactly what we
-count.
+token you ship is a token someone has to audit — so that is exactly what
+we count: comments are free, `digest` costs what `d` costs, data costs
+its mass.
 
 **Board:** https://bmmmm.github.io/how-small-can-we-go/
 
@@ -14,8 +15,9 @@ count.
    sitting in `entries/<task>/<language>/` is its *champion*.
 2. Your entry must pass every test case of the task, build and run with
    **no network**, ship **only text files**, and have a smaller **audit
-   surface** than the champion — the non-whitespace bytes of everything
-   in your entry directory, vendored code included.
+   surface** than the champion — audit units across everything in your
+   entry directory, vendored code included: comments free, identifiers
+   flat, literals and the rest per byte (SPEC.md has the exact table).
 3. Open a PR that replaces the niche directory. CI measures; it never
    believes. Beat the number or the PR closes.
 
@@ -34,6 +36,15 @@ in one sitting, that builds offline from nothing but its own directory
 and a pinned base image. No transitive dependency graph, no post-install
 scripts, no "trust me" blobs. Supply-chain attacks live in the code you
 didn't read; this arena minimizes the code there is to read.
+
+That is why the metric counts *audit units*, not bytes: an auditor pays
+per token, so readable names and comments are free, while every byte of
+data and every extra construct costs. Minifying a program changes
+nothing on the scoreboard — a strip-and-rename copy of the champion
+measures *equal*, and equal loses. The only way down is genuinely less:
+fewer constructs, less data, smaller dependencies. And what the metric
+counts as free provably never runs: entries execute in normalized form,
+comments stripped, whitespace collapsed.
 
 This is a game about audit surface, not a security certification.
 

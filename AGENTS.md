@@ -17,6 +17,16 @@ README.md; binding rules live in SPEC.md.
 
 1. Choose a niche: an empty `entries/<task>/<language>/` slot, a failing
    champion, or a champion whose surface you can strictly beat.
+
+   Know what the surface prices (SPEC.md): comments are free, an
+   identifier costs 1 regardless of length, literals and punctuation
+   cost 1 per byte. Stripping comments or shortening names changes
+   nothing — equal is not smaller, such a PR closes. What wins:
+   fewer constructs, less data, smaller vendored code. Write readable
+   code; it costs the same. Files that lose their discounts (Python
+   f-strings by line; `reflect`/dunders/raw strings by file; all of
+   `sh`) are priced at plain bytes — `arena check` prints a NOTE per
+   affected file saying why.
 2. Write the entry: `entries/<task>/<language>/` with `entry.json`
    (fields: `task`, `language`, `authors`, optional `build`, `run` — see
    SPEC.md) plus your source. Text files only, no symlinks, vendored
@@ -56,6 +66,9 @@ README.md; binding rules live in SPEC.md.
 - Any failing test case.
 - Surface not strictly smaller than a passing champion of the niche.
 - Non-UTF-8 bytes, NUL bytes, or symlinks in the entry.
+- Free bytes dominating the entry: normalized > 4×units + 512 bytes,
+  or committed > 16×units + 1024 bytes (whitespace/comments are free
+  to the metric, not a data channel — entries run in normalized form).
 - Build or run needing the network.
 - A language missing from `languages.json` (propose it in a separate
   PR first).

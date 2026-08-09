@@ -45,12 +45,15 @@ func TestMeasureDir(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "entry.json"), `{"ignored": true}`)
 	writeFile(t, filepath.Join(dir, "main.sh"), "cat \"$1\"\n")
-	m, err := MeasureDir(dir)
+	m, err := MeasureDir(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Files != 1 || m.Surface != 7 || m.Lines != 1 {
-		t.Errorf("got %+v, want 1 file, surface 7, 1 line", m)
+	if m.Files != 1 || m.Surface != 7+7 || m.Lines != 1 { // 7 content + len("main.sh")
+		t.Errorf("got %+v, want 1 file, surface 14, 1 line", m)
+	}
+	if m.RawBytes != 9+7 || m.NormBytes != 9+7 {
+		t.Errorf("raw = %d, normalized = %d, want 16/16 — nil syntax ships verbatim, paths count", m.RawBytes, m.NormBytes)
 	}
 }
 
@@ -59,7 +62,7 @@ func TestMeasureDirRejectsBinary(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "blob"), []byte{0x7f, 0x45, 0x4c, 0x46, 0x00}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := MeasureDir(dir); err == nil || !strings.Contains(err.Error(), "not UTF-8") {
+	if _, err := MeasureDir(dir, nil); err == nil || !strings.Contains(err.Error(), "not UTF-8") {
 		t.Errorf("binary file not rejected, err = %v", err)
 	}
 }
@@ -70,7 +73,7 @@ func TestMeasureDirRejectsSymlink(t *testing.T) {
 	if err := os.Symlink("/etc/hosts", filepath.Join(dir, "sneaky")); err != nil {
 		t.Skipf("cannot create symlink: %v", err)
 	}
-	if _, err := MeasureDir(dir); err == nil || !strings.Contains(err.Error(), "symlink") {
+	if _, err := MeasureDir(dir, nil); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Errorf("symlink not rejected, err = %v", err)
 	}
 }

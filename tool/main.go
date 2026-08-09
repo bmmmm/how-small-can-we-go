@@ -2,7 +2,8 @@
 
 // arena is the measurement and conformance harness for how-small-can-we-go:
 // it checks entries against their task's test cases and measures their
-// audit surface (non-whitespace bytes of everything an entry ships).
+// audit surface in audit units (comments free, identifiers flat, data
+// per byte — see SPEC.md).
 package main
 
 import (
@@ -27,7 +28,8 @@ Usage:
 check    Build an entry, run its task's test cases, print the verdict.
          By default build and cases run in a no-network container (needs
          docker); --no-sandbox executes on the host for local iteration.
-surface  Print the audit surface (non-whitespace bytes) of a directory.
+surface  Print the audit surface (in audit units) of an entry directory.
+         Files priced at plain bytes are noted on stderr.
 board    Re-check every entry and write board.json + index.html.
 
 Exit codes: 0 pass · 1 fail · 2 usage · 3 infrastructure failure

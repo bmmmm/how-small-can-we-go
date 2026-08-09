@@ -11,9 +11,11 @@ SPEC wins.
   `entries/<task>/<language>/`.
 - **Champion** — the entry currently occupying a niche. One entry per
   niche; history lives in git.
-- **Audit surface** — the count of non-whitespace bytes across all files
-  of an entry directory, except `entry.json`. Multi-byte UTF-8 runes cost
-  their encoded size. Lower is better.
+- **Audit surface** — what an auditor must process, counted in *audit
+  units* across all files of an entry directory, except `entry.json`.
+  Lower is better. The pricing (details under *Measurement*): comments
+  are free, an identifier costs 1 flat, literals and everything else
+  cost 1 per byte, whitespace outside literals is free.
 
 ## Entry contract
 
@@ -45,10 +47,60 @@ entries/<task>/<language>/
 
 ## Measurement
 
+Auditors read tokens, not bytes: `digest` and `d` cost a reader the
+same, while every byte of a string literal must be checked one by one.
+The surface prices exactly that. Per file:
+
+| construct                        | cost in audit units                |
+| -------------------------------- | ---------------------------------- |
+| comment                          | 0                                  |
+| identifier / keyword occurrence  | 1, plus 1 per byte beyond 16       |
+| string & number literals         | 1 per byte, whitespace included    |
+| any other non-whitespace byte    | 1                                  |
+| whitespace outside literals      | 0                                  |
+
+Renaming `digest` to `d` and stripping comments changes nothing — a
+challenger that only uglifies measures *equal*, and equal is not
+smaller (gate 1). What still shrinks the number is structure: fewer
+constructs, less data, smaller dependencies.
+
+**Discounts only on proof.** The scanner grants the two discounts
+(comments, flat identifiers) only where the language's declared syntax
+(`languages.json`) lets it prove them safe. Everything doubtful is
+priced at 1 unit per non-whitespace byte: files matching a language's
+no-discount patterns (reflection doors like Go's `reflect` or Python
+dunders, which would turn identifier names into a cheap data channel;
+constructs the scanner cannot lex, like Rust raw strings), single
+lines matching a line pattern (Python f-strings), and every file of a
+language without a syntax config (`sh` — heredocs defeat safe comment
+detection, so it ships verbatim at byte prices). A mispriced corner can
+therefore only ever cost too much, never too little. `arena check` and
+`arena surface` name every file that lost its discounts and why.
+
+**You play what you weigh.** The measured form is the executed form:
+before building, source files have comments stripped and whitespace
+collapsed (indentation survives where it is grammar, e.g. Python;
+semantic comments like `//go:` directives and shebangs survive and are
+priced). Whatever the metric counted as free provably never runs. Two
+volume caps keep the free channels from becoming a covert data store an
+entry reads back at runtime: the normalized entry must stay ≤ 4×units +
+512 bytes, the committed entry ≤ 16×units + 1024 bytes.
+
+**Everything shipped is priced.** Source pricing applies only to files
+with a source extension of the entry's language (`languages.json`);
+every other file is data — priced at plain bytes, shipped verbatim.
+File paths cost 1 unit per byte, so names are not a free channel
+either. `entry.json` must stay a manifest: exactly the five known
+fields, at most 4096 bytes — and it is not copied into the run
+directory at all.
+
 - Every file in the entry directory except `entry.json` is measured.
 - Files must be valid UTF-8 without NUL bytes. Symlinks are forbidden.
   Violations fail the check — nothing unauditable ships.
-- Reported alongside: non-blank line count (informational only).
+- Multi-byte UTF-8 runes cost their encoded size wherever bytes are
+  priced.
+- Reported alongside: non-whitespace bytes and non-blank line count
+  (informational only).
 
 ## Conformance
 
@@ -105,11 +157,15 @@ outputs must state the tool that generated them (in `spec.md`).
 
 ## Languages
 
-`languages.json` maps a language to its pinned container image. The image
-is the trusted base — runtime and stdlib are free, everything else ships
-in the entry. Adding a language is a PR touching only `languages.json`:
-the image must be an official Docker Hub image, pinned to at least
-major.minor, and usable with networking disabled. Image bumps are
+`languages.json` maps a language to its pinned container image and its
+measurement syntax (comment markers, string shapes, no-discount
+patterns). The image is the trusted base — runtime and stdlib are free,
+everything else ships in the entry. Adding a language is a PR touching
+only `languages.json`: the image must be an official Docker Hub image,
+pinned to at least major.minor, and usable with networking disabled. A
+new language may start without a `syntax` block — byte pricing, shipped
+verbatim — and gain one in a later PR arguing why each discount is safe
+against that language's grammar. Image bumps and syntax changes are
 deliberate maintainer PRs, not automatic.
 
 ## For the paranoid (rightly so)
