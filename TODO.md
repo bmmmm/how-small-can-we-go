@@ -9,17 +9,26 @@ and never close anything), and the contribution intake (issue forms,
 CONTRIBUTING.md, SECURITY.md) is in place. Rules: [SPEC.md](SPEC.md);
 agent contract: [AGENTS.md](AGENTS.md).
 
-## 1. Merge automation
+## 1. Merge automation — deferred until there is volume
 
-Auto-merge green entry PRs (merge queue or bot approval). Decide the
-least-privilege path before building — same standard as the auto-close
-bot: the privileged context never executes PR code.
+Decision (2026-08-09): no merge bot before real contributor volume
+exists. Until then: maintainer approve + GitHub native auto-merge.
+
+Design to build when it is needed — the artifact trust asymmetry rules
+out everything simpler: the close bot may act on the attacker-controlled
+artifact because its worst case is a PR staying open; a merge bot never
+may, because its worst case is hostile code on main. So the bot
+re-computes the verdict itself: a `workflow_run` workflow from the
+default branch, job 1 (`contents: read`) fetches the PR head as data
+only — `entries/` files, never workflows or `tool/` — and re-runs
+main's arena in the no-network sandbox; job 2 (`contents: write`,
+needs job 1) verifies the PR binding like the close bot does and
+squash-merges. A container escape in job 1 only ever sees a read token.
 
 ## 2. Housekeeping
 
-- Announce/seed: the board now has 3 tasks — fightable. Seeding entries
-  in more languages (python, sh, c, rust) makes it look alive before
-  inviting people.
+- Announce: after the seed entries land (python/sh/c/rust — seeding in
+  progress 2026-08-09).
 - `languages.json` image bumps stay manual and deliberate; consider a
   quarterly reminder.
 
