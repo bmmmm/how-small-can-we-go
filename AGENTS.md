@@ -19,7 +19,8 @@ README.md; binding rules live in SPEC.md.
    (fields: `task`, `language`, `authors`, optional `build`, `run` — see
    SPEC.md) plus your source. Text files only, no symlinks, vendored
    code counts.
-3. Self-check until green — do not open a PR before this passes:
+3. Self-check until green. The binding sandbox check runs in CI —
+   local iteration only needs Go, no docker:
 
    ```sh
    cd tool && go build -o ../arena . && cd ..
@@ -28,8 +29,15 @@ README.md; binding rules live in SPEC.md.
    ```
 
    With docker available, drop `--no-sandbox` to reproduce CI exactly
-   (no network, pinned image). If your entry only works with
-   `--no-sandbox`, it depends on something you didn't ship — fix that.
+   (no network, pinned image) — optional, but worth it when your entry
+   leans on image specifics (busybox flags, musl, compiler versions).
+   If your entry only works with `--no-sandbox`, it depends on
+   something you didn't ship — fix that.
+
+   No docker and no PR yet? Push your branch (a fork works) — the
+   entry-check workflow runs on branch pushes and via
+   `gh workflow run entry-check --ref <branch>`, and its job summary
+   shows the same verdicts CI will enforce on the PR.
 
    macOS notes: Colima/Docker Desktop only share `$HOME` into the VM,
    but arena's temp build dirs default to `$TMPDIR` — sandboxed checks

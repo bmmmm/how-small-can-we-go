@@ -10,18 +10,29 @@
 # runs from the default branch and validates every field before use.
 name: entry-check
 
+# Also runs on branch pushes and manual dispatch so anyone can outsource
+# the sandbox check to CI without opening a PR (push a branch — a fork
+# works — or `gh workflow run entry-check --ref <branch>`). Only PR runs
+# emit the result artifact; the close bot ignores everything else.
 on:
   pull_request:
     paths:
       - 'entries/**'
       - 'tasks/**'
       - 'languages.json'
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'entries/**'
+      - 'tasks/**'
+      - 'languages.json'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: entry-check-${{ github.event.pull_request.number }}
+  group: entry-check-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,6 +57,11 @@ jobs:
           # not-improving vs the new one.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
+          # push/dispatch runs have no PR context — compare against the
+          # fork point instead.
+          if [ -z "$BASE_SHA" ]; then
+            BASE_SHA=$(git merge-base origin/main HEAD)
+          fi
           arena="$RUNNER_TEMP/arena"
           tsv="$RUNNER_TEMP/entries.tsv"
           : > "$tsv"
@@ -125,6 +141,9 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
+          if [ -z "$BASE_SHA" ]; then
+            BASE_SHA=$(git merge-base origin/main HEAD)
+          fi
           arena="$RUNNER_TEMP/arena"
           mapfile -t tasks < <(git diff --name-only "$BASE_SHA"...HEAD -- tasks/ | cut -d/ -f1-2 | sort -u)
           [ "${#tasks[@]}" -eq 0 ] && exit 0
@@ -148,8 +167,10 @@ jobs:
 
       # Everything below is reporting only: both steps are
       # continue-on-error so a hiccup here can never flip the gate above.
+      # PR-only — push/dispatch runs have no PR to bind the result to,
+      # and entry-close only consumes pull_request runs anyway.
       - name: Emit result
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         continue-on-error: true
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -210,7 +231,7 @@ jobs:
           cat "$out/result.json"
 
       - name: Upload result
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
