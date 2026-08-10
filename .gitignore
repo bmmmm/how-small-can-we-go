@@ -8,3 +8,6 @@
 # local scratch (drafts, throwaway experiments) and agent worktrees
 /tmp/
 /.claude/worktrees/
+
+# personal Claude Code overrides (host-specific paths, never committed)
+/.claude/settings.local.json
