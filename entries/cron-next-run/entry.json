@@ -1,0 +1,7 @@
+{
+  "task": "cron-next-run",
+  "language": "go",
+  "authors": ["claude"],
+  "build": "go build -o prog main.go",
+  "run": "./prog"
+}
