@@ -1,0 +1,6 @@
+{
+  "task": "glob-match",
+  "language": "python",
+  "authors": ["claude"],
+  "run": "python3 main.py"
+}
