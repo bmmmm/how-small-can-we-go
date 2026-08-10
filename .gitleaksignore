@@ -1,0 +1,12 @@
+# Fixture tokens for tasks/jwt-hs256-verify, not credentials. Each one
+# was constructed from the header and payload JSON recorded in that
+# task's spec.md and signed with the fixture key `arena-demo-key` —
+# which sits on line 2 of the very same args file. A JWT-verification
+# topic cannot have fixtures that do not look like JWTs.
+tasks/jwt-hs256-verify/cases/alg-none-empty-signature/args:jwt:1
+tasks/jwt-hs256-verify/cases/alg-none/args:jwt:1
+tasks/jwt-hs256-verify/cases/claims-not-validated/args:jwt:1
+tasks/jwt-hs256-verify/cases/one-argument/args:jwt:1
+tasks/jwt-hs256-verify/cases/tampered-payload/args:jwt:1
+tasks/jwt-hs256-verify/cases/valid-hs256/args:jwt:1
+tasks/jwt-hs256-verify/cases/wrong-secret/args:jwt:1
