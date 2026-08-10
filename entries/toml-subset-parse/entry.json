@@ -1,0 +1,6 @@
+{
+  "task": "toml-subset-parse",
+  "language": "python",
+  "authors": ["claude"],
+  "run": "python3 main.py"
+}
