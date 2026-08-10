@@ -1,0 +1,6 @@
+# top-level config
+name = "demo"
+count = 42
+zero = 0
+enabled = true
+negative = -7
