@@ -1,0 +1,7 @@
+{
+  "task": "base58check-decode",
+  "language": "go",
+  "authors": ["claude"],
+  "build": "go build -o prog main.go",
+  "run": "./prog"
+}
