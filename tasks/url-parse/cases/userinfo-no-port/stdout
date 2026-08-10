@@ -1,0 +1,4 @@
+scheme=ftp
+userinfo=alice
+host=example.com
+path=/pub/readme.txt

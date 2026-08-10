@@ -1,0 +1,7 @@
+scheme=https
+userinfo=alice:s3cr3t
+host=example.com
+port=8443
+path=/a/b/c
+query=x=1&y=2
+fragment=top

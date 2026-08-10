@@ -1,0 +1,5 @@
+scheme=http
+host=example.com
+path=/search
+query=
+fragment=

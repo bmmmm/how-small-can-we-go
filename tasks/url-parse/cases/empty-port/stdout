@@ -1,0 +1,4 @@
+scheme=http
+host=example.com
+port=
+path=/path
