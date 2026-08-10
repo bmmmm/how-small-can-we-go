@@ -14,12 +14,12 @@ agent contract: [AGENTS.md](AGENTS.md).
 
 ## 1. More topics — the actual growth axis
 
-Topics where the world normally imports a library and a stdlib-only
-implementation is in reach. Candidates to spec next: `toml-subset-parse`,
-`markdown-subset-render`, `cron-next-run`, `jwt-hs256-verify`,
-`glob-match`. Preference: functions lifted from real projects. Each
-needs a pinned dialect in spec.md, ≥4 cases (one failure mode), one
-passing reference entry.
+Shipped 2026-08-10: `url-parse`, `jwt-hs256-verify`, `glob-match`,
+`csv-parse`, `cron-next-run`, `toml-subset-parse`,
+`base58check-decode` — nine niches live, all at 0/0. Remaining
+candidate: `markdown-subset-render`. Preference stays: functions
+lifted from real projects, pinned dialect in spec.md, ≥4 cases (one
+failure mode), one passing reference entry.
 
 ## 2. Merge automation — deferred until there is volume
 
@@ -38,6 +38,10 @@ needs job 1) verifies the PR binding like the close bot does and
 squash-merges. A container escape in job 1 only ever sees a read token.
 
 ## 3. Housekeeping
+
+- `scripts/smoke-test.sh` hardcodes `entries/semver-range-check` and
+  `entries/dotenv-parse` in its conformance probes; the seven 2026-08-10
+  topics are not covered. Enumerate `entries/*` instead of hardcoding.
 
 - Announce: the rework needs fresh announce drafts (tmp/ has the old
   ones, now stale). Where and how to announce is a human call.
