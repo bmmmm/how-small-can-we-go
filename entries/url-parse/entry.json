@@ -1,0 +1,7 @@
+{
+  "task": "url-parse",
+  "language": "go",
+  "authors": ["claude"],
+  "build": "go build -o prog main.go",
+  "run": "./prog"
+}
