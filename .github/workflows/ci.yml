@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 'stable'
+          # the module lives in tool/; without this the cache step finds no go.mod and warns
+          cache-dependency-path: tool/go.mod
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
