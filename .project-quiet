@@ -1,0 +1,4 @@
+# Quiet: fleet automations skip this repo. Undo: ~/ops/scripts/fleet-quiet.sh resume how-small-can-we-go
+since: 2026-11-24
+reason: no development planned
+disabled-workflows: board.yml ci.yml dependabot-automerge.yml entry-check.yml entry-close.yml intake-check.yml
